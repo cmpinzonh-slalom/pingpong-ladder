@@ -116,8 +116,9 @@ async function insertMatch(
   }
 ): Promise<MatchRow> {
   const v = validateMatch(opts.games);
-  if (!v.ok) throw badRequest(v.error);
-  const winner = v.aWon ? opts.playerA : opts.playerB;
+  // Explicit narrowing: Vercel compiles without strictNullChecks, where `!v.ok` doesn't narrow the union.
+  if (v.ok === false) throw badRequest((v as { error: string }).error);
+  const winner = (v as { aWon: boolean }).aWon ? opts.playerA : opts.playerB;
   const awaiting = opts.submittedBy === opts.playerA ? opts.playerB : opts.playerA;
 
   const { rows } = await client.query<MatchRow>(
