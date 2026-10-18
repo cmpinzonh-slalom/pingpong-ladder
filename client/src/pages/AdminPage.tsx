@@ -81,7 +81,7 @@ export default function AdminPage() {
             <TableHead>
               <TableRow>
                 <TableCell>Name</TableCell>
-                <TableCell>Email</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Email</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell />
               </TableRow>
@@ -89,8 +89,13 @@ export default function AdminPage() {
             <TableBody>
               {shown.map((u) => (
                 <TableRow key={u.id}>
-                  <TableCell>{u.display_name ?? '–'}</TableCell>
-                  <TableCell>{u.email}</TableCell>
+                  <TableCell>
+                    {u.display_name ?? '–'}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'block', sm: 'none' }, wordBreak: 'break-all' }}>
+                      {u.email}
+                    </Typography>
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{u.email}</TableCell>
                   <TableCell>
                     {!u.has_password ? (
                       <Chip size="small" label="No password" />
@@ -102,7 +107,7 @@ export default function AdminPage() {
                   </TableCell>
                   <TableCell align="right">
                     {u.id !== user!.id && (
-                      <Button size="small" onClick={() => setConfirming(u)}>
+                      <Button size="small" onClick={() => setConfirming(u)} sx={{ whiteSpace: 'nowrap' }}>
                         Reset password
                       </Button>
                     )}

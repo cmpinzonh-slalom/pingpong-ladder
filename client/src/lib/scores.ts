@@ -30,9 +30,9 @@ export function summarize(games: GameInput[]): MatchSummary {
   }
 
   const hi = Math.max(me, them);
-  const winsNeeded = hi === 2 || hi === 3 ? hi : null;
+  const winsNeeded = hi >= 1 && hi <= 3 ? hi : null;
   if (!winsNeeded || Math.min(me, them) >= winsNeeded) {
-    return { ok: false, error: 'Match must be best of 3 (first to 2) or best of 5 (first to 3)' };
+    return { ok: false, error: 'Match must be a single game, best of 3 (first to 2) or best of 5 (first to 3)' };
   }
 
   let a = 0;

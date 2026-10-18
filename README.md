@@ -3,7 +3,7 @@
 Track ping pong matches between Slalom colleagues with Elo ratings. Results only count once **both players confirm**.
 
 - Create an account with your `@slalom.com` email and a password. Forgotten passwords are reset by an admin.
-- Record a match with game-by-game scores (best of 3 or 5, games to 11, win by 2).
+- Record a match with game-by-game scores (single game, best of 3 or 5; games to 11, win by 2).
 - Your opponent confirms, or proposes a correction (which you then confirm or correct, and so on). Either player can withdraw a pending match.
 - On confirmation, ratings update with Elo (start 1200, K = 32).
 - Leaderboard, player profiles with rating chart and match history, and head-to-head stats.
@@ -94,7 +94,7 @@ client/src/components/       Layout, GameScoresInput, PendingMatchCard, MatchRow
 
 ## Rules
 
-- **Score validation:** each game is first to 11, win by 2 (12-10, 13-11 ... after deuce). A match is best of 3 or 5,
+- **Score validation:** each game is first to 11, win by 2 (12-10, 13-11 ... after deuce). A match is a single game, best of 3 or best of 5,
   and no games may be recorded after it's decided.
 - **Elo:** `E = 1 / (1 + 10^((Rb − Ra) / 400))`, `Δ = round(32 · (S − E))`, zero-sum. Applied in order of confirmation.
 ## Accounts and security

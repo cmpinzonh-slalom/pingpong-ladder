@@ -53,6 +53,17 @@ describe('LoginPage', () => {
     expect(register).toHaveBeenCalledWith('jane.doe@slalom.com', 'secret123', 'Jane Doe');
   });
 
+  it('toggles password visibility', async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+    const input = screen.getByLabelText(/^Password/);
+    expect(input).toHaveAttribute('type', 'password');
+    await user.click(screen.getByRole('button', { name: 'Show password' }));
+    expect(input).toHaveAttribute('type', 'text');
+    await user.click(screen.getByRole('button', { name: 'Hide password' }));
+    expect(input).toHaveAttribute('type', 'password');
+  });
+
   it('rejects non-slalom emails on sign up', async () => {
     const register = vi.spyOn(api, 'register');
     const user = userEvent.setup();

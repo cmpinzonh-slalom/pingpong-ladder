@@ -80,6 +80,9 @@ describe('RecordMatchPage', () => {
 
     await user.type(screen.getByLabelText('Game 1 my score'), '11');
     await user.type(screen.getByLabelText('Game 1 opponent score'), '6');
+    // A single game is already a valid match
+    expect(screen.getByText('You won 1–0')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Add game/ }));
     await user.type(screen.getByLabelText('Game 2 my score'), '13');
     await user.type(screen.getByLabelText('Game 2 opponent score'), '11');
 

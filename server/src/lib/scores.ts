@@ -22,7 +22,7 @@ export function validateGame(g: GameScore): string | null {
 }
 
 /**
- * A match is best of 3 or best of 5. It ends as soon as someone wins the majority,
+ * A match is a single game, best of 3 or best of 5. It ends as soon as someone wins the majority,
  * so no games may be recorded after that.
  */
 export function validateMatch(games: GameScore[]): ScoreValidation {
@@ -40,9 +40,9 @@ export function validateMatch(games: GameScore[]): ScoreValidation {
     else bGames++;
   }
 
-  const winsNeeded = [2, 3].find((w) => Math.max(aGames, bGames) === w);
+  const winsNeeded = [1, 2, 3].find((w) => Math.max(aGames, bGames) === w);
   if (!winsNeeded) {
-    return { ok: false, error: 'A match must be best of 3 (first to 2) or best of 5 (first to 3)' };
+    return { ok: false, error: 'A match must be a single game, best of 3 (first to 2) or best of 5 (first to 3)' };
   }
   if (Math.min(aGames, bGames) >= winsNeeded) {
     return { ok: false, error: 'Invalid match result' };

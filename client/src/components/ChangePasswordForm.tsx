@@ -1,4 +1,5 @@
-import { Alert, Box, Button, TextField } from '@mui/material';
+import { Alert, Box, Button } from '@mui/material';
+import PasswordField from './PasswordField';
 import { useState, type FormEvent } from 'react';
 import { api, type Me } from '../api/client';
 
@@ -39,9 +40,9 @@ export default function ChangePasswordForm({ requireCurrent, onDone }: Props) {
   return (
     <Box component="form" onSubmit={submit}>
       {requireCurrent && (
-        <TextField
+        <PasswordField
           label="Current password"
-          type="password"
+          
           fullWidth
           margin="dense"
           autoComplete="current-password"
@@ -49,9 +50,9 @@ export default function ChangePasswordForm({ requireCurrent, onDone }: Props) {
           onChange={(e) => setCurrent(e.target.value)}
         />
       )}
-      <TextField
+      <PasswordField
         label="New password"
-        type="password"
+        
         fullWidth
         margin="dense"
         autoComplete="new-password"
@@ -59,9 +60,9 @@ export default function ChangePasswordForm({ requireCurrent, onDone }: Props) {
         value={next}
         onChange={(e) => setNext(e.target.value)}
       />
-      <TextField
+      <PasswordField
         label="Confirm new password"
-        type="password"
+        
         fullWidth
         margin="dense"
         autoComplete="new-password"

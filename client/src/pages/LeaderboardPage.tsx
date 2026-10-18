@@ -29,19 +29,21 @@ export default function LeaderboardPage() {
 
   return (
     <Card>
-      <CardContent>
+      <CardContent sx={{ px: { xs: 1, sm: 2 } }}>
         <Typography variant="h5" gutterBottom>
           Leaderboard
         </Typography>
         <TableContainer>
-          <Table size="small">
+          <Table size="small" sx={{ '& td, & th': { px: { xs: 0.75, sm: 2 } } }}>
             <TableHead>
               <TableRow>
                 <TableCell>#</TableCell>
                 <TableCell>Player</TableCell>
                 <TableCell align="right">Rating</TableCell>
                 <TableCell align="right">W–L</TableCell>
-                <TableCell align="right">Win %</TableCell>
+                <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                  Win %
+                </TableCell>
                 <TableCell />
               </TableRow>
             </TableHead>
@@ -60,10 +62,12 @@ export default function LeaderboardPage() {
                   <TableCell align="right">
                     {r.wins}–{r.losses}
                   </TableCell>
-                  <TableCell align="right">{r.played ? `${Math.round((r.wins / r.played) * 100)}%` : '–'}</TableCell>
+                  <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                    {r.played ? `${Math.round((r.wins / r.played) * 100)}%` : '–'}
+                  </TableCell>
                   <TableCell align="right">
                     {r.id !== user!.id && (
-                      <Link component={RouterLink} to={`/h2h/${user!.id}/${r.id}`} variant="body2">
+                      <Link component={RouterLink} to={`/h2h/${user!.id}/${r.id}`} variant="body2" noWrap>
                         vs me
                       </Link>
                     )}

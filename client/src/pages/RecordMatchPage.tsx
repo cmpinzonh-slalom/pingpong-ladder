@@ -12,7 +12,7 @@ export default function RecordMatchPage() {
   const navigate = useNavigate();
   const [players, setPlayers] = useState<LeaderboardRow[]>([]);
   const [opponent, setOpponent] = useState<LeaderboardRow | null>(null);
-  const [games, setGames] = useState<GameDraft[]>(emptyGames(2));
+  const [games, setGames] = useState<GameDraft[]>(emptyGames(1));
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,7 +43,7 @@ export default function RecordMatchPage() {
 
   return (
     <Card>
-      <CardContent sx={{ p: 3 }}>
+      <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
         <Typography variant="h5" gutterBottom>
           Record a match
         </Typography>
@@ -53,7 +53,7 @@ export default function RecordMatchPage() {
 
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
           <Autocomplete
-            sx={{ minWidth: 280, flex: 1 }}
+            sx={{ minWidth: { xs: '100%', sm: 280 }, flex: 1 }}
             options={players}
             value={opponent}
             onChange={(_, v) => setOpponent(v)}
@@ -62,6 +62,7 @@ export default function RecordMatchPage() {
             renderInput={(params) => <TextField {...params} label="Opponent" />}
           />
           <TextField
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
             type="date"
             label="Played on"
             value={date}
@@ -77,7 +78,7 @@ export default function RecordMatchPage() {
             {error}
           </Alert>
         )}
-        <Button variant="contained" size="large" sx={{ mt: 3 }} disabled={!canSubmit} onClick={submit}>
+        <Button variant="contained" size="large" sx={{ mt: 3, width: { xs: '100%', sm: 'auto' } }} disabled={!canSubmit} onClick={submit}>
           Submit for confirmation
         </Button>
       </CardContent>

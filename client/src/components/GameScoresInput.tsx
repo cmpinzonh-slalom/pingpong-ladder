@@ -26,6 +26,9 @@ interface Props {
   opponentName?: string;
 }
 
+// pattern triggers the numeric keypad on iOS; inputMode on Android.
+const numeric = { inputMode: 'numeric' as const, pattern: '[0-9]*', maxLength: 2 };
+
 export default function GameScoresInput({ value, onChange, opponentName = 'Opponent' }: Props) {
   const set = (i: number, field: keyof GameDraft, v: string) => {
     const next = value.map((g, j) => (j === i ? { ...g, [field]: v.replace(/[^0-9]/g, '') } : g));
@@ -38,16 +41,22 @@ export default function GameScoresInput({ value, onChange, opponentName = 'Oppon
     <Box>
       {value.map((g, i) => (
         <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-          <Typography sx={{ width: 64 }} color="text.secondary">
-            Game {i + 1}
+          <Typography sx={{ width: { xs: 28, sm: 64 }, flexShrink: 0 }} color="text.secondary">
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              Game{' '}
+            </Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+              G
+            </Box>
+            {i + 1}
           </Typography>
           <TextField
             size="small"
             label="Me"
             value={g.me}
             onChange={(e) => set(i, 'me', e.target.value)}
-            slotProps={{ htmlInput: { inputMode: 'numeric', 'aria-label': `Game ${i + 1} my score` } }}
-            sx={{ width: 90 }}
+            slotProps={{ htmlInput: { ...numeric, 'aria-label': `Game ${i + 1} my score` } }}
+            sx={{ width: { xs: 'auto', sm: 90 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}
           />
           <Typography>–</Typography>
           <TextField
@@ -55,8 +64,8 @@ export default function GameScoresInput({ value, onChange, opponentName = 'Oppon
             label={opponentName}
             value={g.them}
             onChange={(e) => set(i, 'them', e.target.value)}
-            slotProps={{ htmlInput: { inputMode: 'numeric', 'aria-label': `Game ${i + 1} opponent score` } }}
-            sx={{ width: 90 }}
+            slotProps={{ htmlInput: { ...numeric, 'aria-label': `Game ${i + 1} opponent score` } }}
+            sx={{ width: { xs: 'auto', sm: 90 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}
           />
           <IconButton
             aria-label={`Remove game ${i + 1}`}

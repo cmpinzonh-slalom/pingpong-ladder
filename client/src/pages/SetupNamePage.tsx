@@ -24,9 +24,9 @@ export default function SetupNamePage() {
   };
 
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 12, px: 2 }}>
+    <Box sx={{ display: 'flex', justifyContent: 'center', mt: { xs: 4, sm: 12 }, px: 2 }}>
       <Card sx={{ maxWidth: 420, width: '100%' }}>
-        <CardContent sx={{ p: 4 }}>
+        <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
           <Typography variant="h5" gutterBottom>
             Welcome!
           </Typography>

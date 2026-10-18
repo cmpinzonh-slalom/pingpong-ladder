@@ -46,7 +46,9 @@ describe('score validation', () => {
     expect(validateGame(g)).not.toBeNull();
   });
 
-  it('accepts best of 3 and best of 5', () => {
+  it('accepts a single game, best of 3 and best of 5', () => {
+    expect(validateMatch([{ a: 11, b: 9 }])).toMatchObject({ ok: true, aWon: true, aGames: 1, bGames: 0 });
+    expect(validateMatch([{ a: 10, b: 12 }])).toMatchObject({ ok: true, aWon: false });
     expect(validateMatch([{ a: 11, b: 5 }, { a: 11, b: 7 }])).toMatchObject({ ok: true, aWon: true });
     expect(validateMatch([{ a: 11, b: 5 }, { a: 7, b: 11 }, { a: 9, b: 11 }])).toMatchObject({ ok: true, aWon: false });
     expect(
@@ -56,7 +58,6 @@ describe('score validation', () => {
 
   it('rejects undecided or over-long matches', () => {
     expect(validateMatch([]).ok).toBe(false);
-    expect(validateMatch([{ a: 11, b: 5 }]).ok).toBe(false);
     expect(validateMatch([{ a: 11, b: 5 }, { a: 5, b: 11 }]).ok).toBe(false);
     // Decided 2-0 but a third game recorded
     expect(validateMatch([{ a: 11, b: 5 }, { a: 11, b: 5 }, { a: 5, b: 11 }]).ok).toBe(false);

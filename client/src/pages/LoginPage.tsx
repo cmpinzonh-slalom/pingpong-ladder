@@ -1,5 +1,6 @@
 import { Alert, Box, Button, Card, CardContent, Tab, Tabs, TextField, Typography } from '@mui/material';
 import SportsTennisIcon from '@mui/icons-material/SportsTennis';
+import PasswordField from '../components/PasswordField';
 import { useState, type FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -60,7 +61,7 @@ export default function LoginPage() {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'center', mt: { xs: 6, sm: 12 }, px: 2 }}>
       <Card sx={{ maxWidth: 420, width: '100%' }}>
-        <CardContent sx={{ p: 4 }}>
+        <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             <SportsTennisIcon color="primary" />
             <Typography variant="h5">Ping Pong Ladder</Typography>
@@ -77,6 +78,7 @@ export default function LoginPage() {
               fullWidth
               autoFocus
               autoComplete="username"
+              slotProps={{ htmlInput: { autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false } }}
               margin="dense"
               value={email}
               onChange={(e) => {
@@ -97,9 +99,9 @@ export default function LoginPage() {
                 }}
               />
             )}
-            <TextField
+            <PasswordField
               label="Password"
-              type="password"
+              
               fullWidth
               margin="dense"
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
@@ -108,9 +110,9 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
             {mode === 'register' && (
-              <TextField
+              <PasswordField
                 label="Confirm password"
-                type="password"
+                
                 fullWidth
                 margin="dense"
                 autoComplete="new-password"

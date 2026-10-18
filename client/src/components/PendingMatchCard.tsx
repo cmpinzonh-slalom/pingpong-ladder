@@ -9,6 +9,8 @@ import {
   DialogContent,
   DialogTitle,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import dayjs from 'dayjs';
 import { useState } from 'react';
@@ -30,6 +32,7 @@ export default function PendingMatchCard({ match: m, userId, onChanged }: Props)
   const awaitingMe = m.awaiting_user_id === userId;
   const isCounter = m.parent_match_id !== null;
 
+  const fullScreen = useMediaQuery(useTheme().breakpoints.down('sm'));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -108,7 +111,7 @@ export default function PendingMatchCard({ match: m, userId, onChanged }: Props)
         </Box>
       </CardContent>
 
-      <Dialog open={editing} onClose={() => setEditing(false)} fullWidth maxWidth="xs">
+      <Dialog open={editing} onClose={() => setEditing(false)} fullWidth maxWidth="xs" fullScreen={fullScreen}>
         <DialogTitle>Correct the result vs {opp.name}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

@@ -11,7 +11,7 @@ describe('client score validation', () => {
   it('summarizes matches', () => {
     expect(summarize([{ me: 11, them: 5 }, { me: 11, them: 7 }])).toEqual({ ok: true, myGames: 2, theirGames: 0, iWon: true });
     expect(summarize([{ me: 5, them: 11 }, { me: 11, them: 7 }, { me: 8, them: 11 }])).toMatchObject({ ok: true, iWon: false });
-    expect(summarize([{ me: 11, them: 5 }]).ok).toBe(false);
+    expect(summarize([{ me: 11, them: 5 }])).toEqual({ ok: true, myGames: 1, theirGames: 0, iWon: true });
     expect(summarize([{ me: 11, them: 5 }, { me: 11, them: 5 }, { me: 5, them: 11 }]).ok).toBe(false);
   });
 });
