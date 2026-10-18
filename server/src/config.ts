@@ -1,8 +1,10 @@
 import path from 'path';
 import dotenv from 'dotenv';
 
-// Load repo-root .env (works from src/ via ts-node and from dist/). On Vercel, env comes from the platform.
-dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true } as dotenv.DotenvConfigOptions);
+// Load repo-root .env for local dev only. On Vercel, env comes exclusively from the platform settings.
+if (!process.env.VERCEL) {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true } as dotenv.DotenvConfigOptions);
+}
 
 function list(v: string | undefined): string[] {
   return (v || '')
