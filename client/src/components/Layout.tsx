@@ -11,6 +11,8 @@ export default function Layout() {
     { to: '/record', label: 'Record match' },
     { to: '/leaderboard', label: 'Leaderboard' },
     { to: `/players/${user!.id}`, label: 'My profile' },
+    { to: '/account', label: 'Account' },
+    ...(user!.is_admin ? [{ to: '/admin', label: 'Admin' }] : []),
   ];
 
   return (

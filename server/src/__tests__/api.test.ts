@@ -27,39 +27,87 @@ afterAll(() => {
   setPoolForTesting(null);
 });
 
-/** Signs in via magic link and returns a supertest agent holding the session cookie. */
+const PW = 'correct horse battery';
+
+/** Registers a user and returns a supertest agent holding the session cookie. */
 async function login(email: string, name?: string) {
   const agent = request.agent(app);
-  await agent.post('/api/auth/request-link').send({ email }).expect(200);
-  const msg = outbox.pop()!;
-  const token = decodeURIComponent(/token=([^\s"]+)/.exec(msg.text)![1]);
-  await agent.post('/api/auth/verify').send({ token }).expect(200);
-  if (name) await agent.patch('/api/me').send({ display_name: name }).expect(200);
-  const me = await agent.get('/api/me').expect(200);
-  return { agent, id: me.body.id as number };
+  const res = await agent
+    .post('/api/auth/register')
+    .send({ email, password: PW, display_name: name ?? `Player ${email.split('@')[0]}` })
+    .expect(201);
+  return { agent, id: res.body.id as number };
 }
 
 describe('auth', () => {
-  it('rejects non-slalom emails', async () => {
-    const res = await request(app).post('/api/auth/request-link').send({ email: 'x@gmail.com' });
-    expect(res.status).toBe(403);
-    expect(outbox).toHaveLength(0);
+  it('rejects non-slalom emails and short passwords', async () => {
+    await request(app).post('/api/auth/register').send({ email: 'x@gmail.com', password: PW, display_name: 'X' + 'x' }).expect(403);
+    await request(app).post('/api/auth/register').send({ email: 'x@slalom.com', password: 'short', display_name: 'Xx' }).expect(400);
   });
 
   it('enforces the pilot allow-list', async () => {
     process.env.ALLOWED_EMAILS = 'miguel.pinzonhernand@slalom.com';
-    await request(app).post('/api/auth/request-link').send({ email: 'other@slalom.com' }).expect(403);
-    await request(app).post('/api/auth/request-link').send({ email: 'Miguel.PinzonHernand@slalom.com' }).expect(200);
+    await request(app).post('/api/auth/register').send({ email: 'other@slalom.com', password: PW, display_name: 'Other' }).expect(403);
+    await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'Miguel.PinzonHernand@slalom.com', password: PW, display_name: 'Miguel' })
+      .expect(201);
   });
 
-  it('logs in with a magic link, which is single use', async () => {
-    await request(app).post('/api/auth/request-link').send({ email: 'a@slalom.com' }).expect(200);
-    const token = decodeURIComponent(/token=([^\s"]+)/.exec(outbox[0].text)![1]);
-    const agent = request.agent(app);
-    await agent.post('/api/auth/verify').send({ token }).expect(200);
+  it('registers, logs out, and logs back in with the password', async () => {
+    const { agent } = await login('a@slalom.com', 'Alice');
     const me = await agent.get('/api/me').expect(200);
-    expect(me.body).toMatchObject({ email: 'a@slalom.com', rating: 1200, display_name: null });
-    await request(app).post('/api/auth/verify').send({ token }).expect(400);
+    expect(me.body).toMatchObject({ email: 'a@slalom.com', display_name: 'Alice', rating: 1200, is_admin: false });
+
+    await request(app).post('/api/auth/register').send({ email: 'a@slalom.com', password: PW, display_name: 'Again' }).expect(409);
+    await request(app).post('/api/auth/login').send({ email: 'a@slalom.com', password: 'wrong password' }).expect(401);
+    await request(app).post('/api/auth/login').send({ email: 'nobody@slalom.com', password: PW }).expect(401);
+
+    const fresh = request.agent(app);
+    await fresh.post('/api/auth/login').send({ email: ' A@Slalom.com ', password: PW }).expect(200);
+    await fresh.get('/api/me').expect(200);
+  });
+
+  it('changes own password with the current password, revoking other sessions', async () => {
+    const { agent } = await login('a@slalom.com');
+    const other = request.agent(app);
+    await other.post('/api/auth/login').send({ email: 'a@slalom.com', password: PW }).expect(200);
+
+    await agent.post('/api/me/password').send({ current_password: 'nope', new_password: 'another password' }).expect(400);
+    await agent.post('/api/me/password').send({ current_password: PW, new_password: 'another password' }).expect(200);
+
+    await agent.get('/api/me').expect(200); // this session survives
+    await other.get('/api/me').expect(401); // other device signed out
+    await request(app).post('/api/auth/login').send({ email: 'a@slalom.com', password: 'another password' }).expect(200);
+  });
+
+  it('lets an admin reset a password, forcing a change on next login', async () => {
+    process.env.ADMIN_EMAILS = 'admin@slalom.com';
+    const admin = await login('admin@slalom.com', 'Admin');
+    const victim = await login('b@slalom.com', 'Bob');
+
+    // Non-admins can't use admin endpoints
+    await victim.agent.get('/api/admin/users').expect(403);
+    await victim.agent.post(`/api/admin/users/${admin.id}/reset-password`).expect(403);
+
+    const list = await admin.agent.get('/api/admin/users').expect(200);
+    expect(list.body).toHaveLength(2);
+    expect(list.body[0]).not.toHaveProperty('password_hash');
+
+    const reset = await admin.agent.post(`/api/admin/users/${victim.id}/reset-password`).expect(200);
+    const temp = reset.body.temporary_password as string;
+    expect(temp).toMatch(/^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/);
+
+    await victim.agent.get('/api/me').expect(401); // old session revoked
+    await request(app).post('/api/auth/login').send({ email: 'b@slalom.com', password: PW }).expect(401);
+
+    const b = request.agent(app);
+    const li = await b.post('/api/auth/login').send({ email: 'b@slalom.com', password: temp }).expect(200);
+    expect(li.body.must_change_password).toBe(true);
+    await b.get('/api/users').expect(403); // blocked until password changed
+    await b.post('/api/me/password').send({ new_password: 'brand new password' }).expect(200);
+    await b.get('/api/users').expect(200);
+    delete process.env.ADMIN_EMAILS;
   });
 
   it('requires a session', async () => {

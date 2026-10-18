@@ -2,7 +2,7 @@
 
 Track ping pong matches between Slalom colleagues with Elo ratings. Results only count once **both players confirm**.
 
-- Sign in with a magic link sent to your `@slalom.com` email (no passwords).
+- Create an account with your `@slalom.com` email and a password. Forgotten passwords are reset by an admin.
 - Record a match with game-by-game scores (best of 3 or 5, games to 11, win by 2).
 - Your opponent confirms, or proposes a correction (which you then confirm or correct, and so on). Either player can withdraw a pending match.
 - On confirmation, ratings update with Elo (start 1200, K = 32).
@@ -15,7 +15,8 @@ Track ping pong matches between Slalom colleagues with Elo ratings. Results only
 | Client   | React 19, Vite, TypeScript, MUI 7, React Router 7, Recharts    |
 | Server   | Express 5 + TypeScript (`server/`), served as one Vercel function (`api/index.ts`) |
 | Database | Postgres: Neon (prod), Docker (optional local), raw `pg`, schema in `server/src/db/init.sql` |
-| Email    | Nodemailer + Gmail SMTP (App Password)                         |
+| Auth     | bcrypt password hashes, httpOnly JWT session cookie            |
+| Email    | Optional match notifications via Nodemailer + Gmail SMTP       |
 | Tests    | Jest + supertest + pg-mem (server), Vitest + Testing Library (client) |
 
 ## Local development
@@ -28,15 +29,16 @@ npm run db:seed           # optional: add 3 test opponents
 npm run dev               # API on :3000, client on http://localhost:5173
 ```
 
-If `SMTP_USER`/`SMTP_PASS` are empty, magic links are **printed to the server console** instead of emailed.
+If `SMTP_USER`/`SMTP_PASS` are empty, match notification emails are **printed to the server console** instead.
 
 To use a local DB instead of Neon: `docker compose up -d` and set
 `DATABASE_URL=postgresql://pingpong:pingpong@localhost:5432/pingpong`.
 
 ### Testing confirmations during the pilot
 
-Seeded test users (`test.alice@slalom.com`, ...) have no real inbox. To act as one locally, add it to
-`ALLOWED_EMAILS`, leave SMTP empty, sign in in a private window, and copy the link from the server console.
+Seeded test users (`test.alice@slalom.com`, ...) have no password. To act as one locally, add it to
+`ALLOWED_EMAILS` and use **Create account** with that email in a private window (accounts without a
+password can be claimed once).
 
 ### Tests
 
@@ -50,21 +52,22 @@ npm test                  # server + client
 | ---------------- | ---------------------------------------------------------------------------------------- |
 | `DATABASE_URL`   | Neon **pooled** connection string (`...-pooler...neon.tech/neondb?sslmode=require`)     |
 | `JWT_SECRET`     | Long random string (`openssl rand -hex 32`)                                              |
-| `APP_URL`        | Public URL used in emailed links, e.g. `https://your-app.vercel.app`                     |
+| `APP_URL`        | Public URL used in notification emails, e.g. `https://your-app.vercel.app`               |
 | `SMTP_HOST`      | `smtp.gmail.com`                                                                         |
 | `SMTP_PORT`      | `465`                                                                                    |
 | `SMTP_USER`      | Gmail address                                                                            |
 | `SMTP_PASS`      | Gmail **App Password** (not your account password)                                       |
 | `EMAIL_FROM`     | e.g. `Ping Pong Ladder <you@gmail.com>`                                                  |
-| `ALLOWED_EMAILS` | Optional comma-separated allow-list (pilot). Empty = any `@slalom.com` address           |
+| `ALLOWED_EMAILS` | Optional comma-separated sign-up allow-list (pilot). Empty = any `@slalom.com` address   |
+| `ADMIN_EMAILS`   | Comma-separated admins who can reset other users' passwords                              |
 
 ### Gmail App Password
 
 1. Turn on 2-Step Verification on the Gmail account: <https://myaccount.google.com/security>.
 2. Open **App passwords**, create one named "pingpong-ladder", copy the 16-character code into `SMTP_PASS`.
 
-Gmail allows roughly 500 messages/day. Corporate filters may quarantine mail from a `gmail.com` sender; if
-that happens, swap the implementation in `server/src/lib/mailer.ts` (it's the only place that sends email).
+Email is only used for best-effort match notifications; the app works fully without it. Corporate filters may
+delay or quarantine mail from a `gmail.com` sender.
 
 ## Deploying to Vercel
 
@@ -84,8 +87,9 @@ server/src/services/         match lifecycle (create, counter, confirm, withdraw
 server/src/lib/              elo, score validation, mailer
 server/src/db/               pg pool + init.sql
 server/scripts/              db:init, db:seed
-client/src/pages/            Login, Verify, SetupName, Dashboard, RecordMatch, Leaderboard, Profile, HeadToHead
-client/src/components/       Layout, GameScoresInput, PendingMatchCard, MatchRow
+client/src/pages/            Login, ForcePasswordChange, SetupName, Dashboard, RecordMatch, Leaderboard,
+                             Profile, HeadToHead, Account, Admin
+client/src/components/       Layout, GameScoresInput, PendingMatchCard, MatchRow, ChangePasswordForm
 ```
 
 ## Rules
@@ -93,6 +97,13 @@ client/src/components/       Layout, GameScoresInput, PendingMatchCard, MatchRow
 - **Score validation:** each game is first to 11, win by 2 (12-10, 13-11 ... after deuce). A match is best of 3 or 5,
   and no games may be recorded after it's decided.
 - **Elo:** `E = 1 / (1 + 10^((Rb − Ra) / 400))`, `Δ = round(32 · (S − E))`, zero-sum. Applied in order of confirmation.
-- **Security:** login tokens are random 32 bytes, stored hashed, valid 15 minutes, single use. Verification is a POST
-  from the client page, so email link scanners that pre-fetch URLs can't consume the token. Sessions are httpOnly
-  JWT cookies (30 days).
+## Accounts and security
+
+- Sign-up requires an `@slalom.com` address (plus `ALLOWED_EMAILS` if set) and a password of 8+ characters.
+  Email ownership is **not** verified, so in principle someone could register a colleague's address first.
+  If that happens, an admin can reset the account's password and hand it to the real owner.
+- Passwords are hashed with bcrypt. Sessions are httpOnly JWT cookies (30 days) that also carry a session
+  version: changing or resetting a password signs out all other sessions.
+- **Forgotten password:** an admin opens **Admin**, clicks **Reset password**, and shares the temporary
+  password privately. The user must choose a new password at their next sign-in before doing anything else.
+- There is no login rate limiting; bcrypt slows brute force but doesn't prevent it.

@@ -8,14 +8,16 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS login_tokens (
-  id          SERIAL PRIMARY KEY,
-  token_hash  TEXT NOT NULL UNIQUE,
-  email       TEXT NOT NULL,
-  expires_at  TIMESTAMPTZ NOT NULL,
-  used_at     TIMESTAMPTZ,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Password auth (added after the original magic-link version; ALTERs keep existing DBs in sync).
+-- password_hash is NULL for accounts that haven't set a password yet (they can claim it by registering).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+-- Set after an admin reset: the user must choose a new password on next login.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+-- Bumped on password change/reset to invalidate existing sessions.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+
+-- Legacy magic-link table, no longer used.
+DROP TABLE IF EXISTS login_tokens;
 
 -- status: pending | confirmed | superseded | withdrawn
 CREATE TABLE IF NOT EXISTS matches (

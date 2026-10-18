@@ -9,6 +9,18 @@ export interface Me {
   email: string;
   display_name: string | null;
   rating: number;
+  is_admin: boolean;
+  must_change_password: boolean;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  display_name: string | null;
+  rating: number;
+  has_password: boolean;
+  must_change_password: boolean;
+  created_at: string;
 }
 
 export interface LeaderboardRow extends Player {
@@ -80,11 +92,18 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
-  requestLink: (email: string) => request<{ ok: true }>('POST', '/auth/request-link', { email }),
-  verify: (token: string) => request<{ ok: true }>('POST', '/auth/verify', { token }),
+  register: (email: string, password: string, display_name: string) =>
+    request<Me>('POST', '/auth/register', { email, password, display_name }),
+  login: (email: string, password: string) => request<Me>('POST', '/auth/login', { email, password }),
+  changePassword: (new_password: string, current_password?: string) =>
+    request<Me>('POST', '/me/password', { new_password, current_password }),
   logout: () => request<{ ok: true }>('POST', '/auth/logout'),
   me: () => request<Me>('GET', '/me'),
   updateMe: (display_name: string) => request<Me>('PATCH', '/me', { display_name }),
+
+  adminUsers: () => request<AdminUser[]>('GET', '/admin/users'),
+  adminResetPassword: (id: number) =>
+    request<{ email: string; temporary_password: string }>('POST', `/admin/users/${id}/reset-password`),
 
   users: () => request<LeaderboardRow[]>('GET', '/users'),
   user: (id: number) => request<Profile>('GET', `/users/${id}`),

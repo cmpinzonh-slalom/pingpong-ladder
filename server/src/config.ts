@@ -29,6 +29,10 @@ export const config = {
   get allowedEmails() {
     return list(process.env.ALLOWED_EMAILS);
   },
+  /** Admins can reset other users' passwords. */
+  get adminEmails() {
+    return list(process.env.ADMIN_EMAILS);
+  },
   allowedDomain: 'slalom.com',
   smtp: {
     get host() {
@@ -54,5 +58,5 @@ export const config = {
 
 export const K_FACTOR = 32;
 export const STARTING_RATING = 1200;
-export const LOGIN_TOKEN_TTL_MIN = 15;
+export const MIN_PASSWORD_LENGTH = 8;
 export const SESSION_DAYS = 30;
