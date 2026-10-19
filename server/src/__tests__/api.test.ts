@@ -181,6 +181,17 @@ describe('matches', () => {
     await a.agent.post('/api/matches').send({ opponent_id: a.id, games: win }).expect(400);
     await a.agent.post('/api/matches').send({ opponent_id: 9999, games: win }).expect(404);
     await a.agent.post('/api/matches').send({ opponent_id: b.id, games: [{ me: 11, them: 10 }] }).expect(400);
+
+    const ahead = (ms: number) => new Date(Date.now() + ms).toISOString();
+    const HOUR = 3600 * 1000;
+    // Small client clock skew is tolerated
+    await a.agent.post('/api/matches').send({ opponent_id: b.id, games: win, played_at: ahead(2 * 60 * 1000) }).expect(201);
+    // Regression: tomorrow's local noon submitted late tonight (~13h ahead) must be rejected
+    await a.agent.post('/api/matches').send({ opponent_id: b.id, games: win, played_at: ahead(13 * HOUR) }).expect(400);
+    // Just past the skew allowance is rejected
+    await a.agent.post('/api/matches').send({ opponent_id: b.id, games: win, played_at: ahead(10 * 60 * 1000) }).expect(400);
+    // Days ahead is rejected
+    await a.agent.post('/api/matches').send({ opponent_id: b.id, games: win, played_at: ahead(48 * HOUR) }).expect(400);
   });
 
   it('lets either player withdraw a pending match', async () => {

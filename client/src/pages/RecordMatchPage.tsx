@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, type LeaderboardRow } from '../api/client';
 import GameScoresInput, { emptyGames, toGames, type GameDraft } from '../components/GameScoresInput';
 import { useAuth } from '../contexts/AuthContext';
+import { toPlayedAt } from '../lib/dates';
 import { summarize } from '../lib/scores';
 
 export default function RecordMatchPage() {
@@ -30,9 +31,7 @@ export default function RecordMatchPage() {
     setBusy(true);
     setError(null);
     try {
-      // Midday local time avoids the date shifting across time zones.
-      const playedAt = dayjs(date).hour(12).toISOString();
-      await api.createMatch(opponent.id, toGames(games), playedAt);
+      await api.createMatch(opponent.id, toGames(games), toPlayedAt(date));
       navigate('/', { state: { flash: `Match sent to ${opponent.name} for confirmation` } });
     } catch (err) {
       setError((err as Error).message);
