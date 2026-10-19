@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -66,6 +67,15 @@ export default function PendingMatchCard({ match: m, userId, onChanged }: Props)
             {dayjs(m.played_at).format('ddd, MMM D')}
           </Typography>
         </Box>
+        {m.tournament && (
+          <Chip
+            size="small"
+            color="secondary"
+            variant="outlined"
+            label={`${m.tournament.name} · ${m.tournament.round_name}`}
+            sx={{ mt: 0.5 }}
+          />
+        )}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {mine.map((g) => `${g.me}-${g.them}`).join(', ')}
         </Typography>

@@ -13,6 +13,7 @@ const me: Me = {
   display_name: 'Jane Doe',
   rating: 1200,
   is_admin: false,
+  is_owner: false,
   must_change_password: false,
 };
 

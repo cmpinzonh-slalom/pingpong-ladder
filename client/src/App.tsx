@@ -12,6 +12,9 @@ import LoginPage from './pages/LoginPage';
 import ProfilePage from './pages/ProfilePage';
 import RecordMatchPage from './pages/RecordMatchPage';
 import SetupNamePage from './pages/SetupNamePage';
+import TournamentFormPage from './pages/TournamentFormPage';
+import TournamentPage from './pages/TournamentPage';
+import TournamentsPage from './pages/TournamentsPage';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -37,6 +40,10 @@ export default function App() {
         <Route path="/players/:id" element={<ProfilePage />} />
         <Route path="/h2h/:a/:b" element={<HeadToHeadPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/tournaments" element={<TournamentsPage />} />
+        <Route path="/tournaments/:id" element={<TournamentPage />} />
+        {user.is_admin && <Route path="/tournaments/new" element={<TournamentFormPage />} />}
+        {user.is_admin && <Route path="/tournaments/:id/edit" element={<TournamentFormPage />} />}
         {user.is_admin && <Route path="/admin" element={<AdminPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

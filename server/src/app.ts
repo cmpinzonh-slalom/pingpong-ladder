@@ -4,6 +4,7 @@ import './config';
 import { HttpError } from './lib/errors';
 import authRoutes from './routes/auth';
 import matchRoutes from './routes/matches';
+import tournamentRoutes from './routes/tournaments';
 import userRoutes from './routes/users';
 
 const app = express();
@@ -19,6 +20,7 @@ app.use('/api', authRoutes);
 // matchRoutes must be mounted before userRoutes, because userRoutes requires
 // auth on every /api route and also serves GET /api/matches/recent.
 app.use('/api', matchRoutes);
+app.use('/api', tournamentRoutes);
 app.use('/api', userRoutes);
 
 app.use('/api', (_req, res) => {

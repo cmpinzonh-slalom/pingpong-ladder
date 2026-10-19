@@ -24,12 +24,25 @@ interface Props {
   value: GameDraft[];
   onChange: (v: GameDraft[]) => void;
   opponentName?: string;
+  /** Label for the first score column (defaults to "Me"). */
+  myLabel?: string;
+  /** Describe the result as "<name> wins" instead of "You won" (e.g. admins entering results). */
+  thirdPerson?: boolean;
+  /** Extra validation message (e.g. wrong tournament format), shown when the scores are otherwise valid. */
+  extraError?: string | null;
 }
 
 // pattern triggers the numeric keypad on iOS; inputMode on Android.
 const numeric = { inputMode: 'numeric' as const, pattern: '[0-9]*', maxLength: 2 };
 
-export default function GameScoresInput({ value, onChange, opponentName = 'Opponent' }: Props) {
+export default function GameScoresInput({
+  value,
+  onChange,
+  opponentName = 'Opponent',
+  myLabel = 'Me',
+  thirdPerson = false,
+  extraError = null,
+}: Props) {
   const set = (i: number, field: keyof GameDraft, v: string) => {
     const next = value.map((g, j) => (j === i ? { ...g, [field]: v.replace(/[^0-9]/g, '') } : g));
     onChange(next);
@@ -52,7 +65,7 @@ export default function GameScoresInput({ value, onChange, opponentName = 'Oppon
           </Typography>
           <TextField
             size="small"
-            label="Me"
+            label={myLabel}
             value={g.me}
             onChange={(e) => set(i, 'me', e.target.value)}
             slotProps={{ htmlInput: { ...numeric, 'aria-label': `Game ${i + 1} my score` } }}
@@ -85,10 +98,14 @@ export default function GameScoresInput({ value, onChange, opponentName = 'Oppon
         Add game
       </Button>
       {allFilled && (
-        <Alert severity={summary.ok ? (summary.iWon ? 'success' : 'info') : 'warning'} sx={{ mt: 2 }}>
-          {summary.ok
-            ? `${summary.iWon ? 'You won' : 'You lost'} ${summary.myGames}–${summary.theirGames}`
-            : summary.error}
+        <Alert severity={extraError || !summary.ok ? 'warning' : summary.iWon ? 'success' : 'info'} sx={{ mt: 2 }}>
+          {extraError && summary.ok
+            ? extraError
+            : summary.ok
+              ? thirdPerson
+                ? `${summary.iWon ? myLabel : opponentName} wins ${Math.max(summary.myGames, summary.theirGames)}–${Math.min(summary.myGames, summary.theirGames)}`
+                : `${summary.iWon ? 'You won' : 'You lost'} ${summary.myGames}–${summary.theirGames}`
+              : summary.error}
         </Alert>
       )}
     </Box>

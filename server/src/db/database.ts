@@ -1,4 +1,8 @@
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { Pool, types, PoolClient, QueryResult, QueryResultRow } from 'pg';
+
+// Return DATE columns as plain 'YYYY-MM-DD' strings instead of local-midnight Dates,
+// so calendar dates never shift with the server's time zone.
+types.setTypeParser(1082, (v: string) => v);
 import { config } from '../config';
 
 let pool: Pool | null = null;

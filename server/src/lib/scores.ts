@@ -23,9 +23,10 @@ export function validateGame(g: GameScore): string | null {
 
 /**
  * A match is a single game, best of 3 or best of 5. It ends as soon as someone wins the majority,
- * so no games may be recorded after that.
+ * so no games may be recorded after that. If `bestOf` is given (tournaments), the result must
+ * match exactly that format.
  */
-export function validateMatch(games: GameScore[]): ScoreValidation {
+export function validateMatch(games: GameScore[], bestOf?: number): ScoreValidation {
   if (!Array.isArray(games) || games.length === 0) {
     return { ok: false, error: 'Enter at least one game' };
   }
@@ -46,6 +47,12 @@ export function validateMatch(games: GameScore[]): ScoreValidation {
   }
   if (Math.min(aGames, bGames) >= winsNeeded) {
     return { ok: false, error: 'Invalid match result' };
+  }
+  if (bestOf !== undefined && winsNeeded !== (bestOf + 1) / 2) {
+    return {
+      ok: false,
+      error: bestOf === 1 ? 'This match is a single game' : `This match is best of ${bestOf} (first to ${(bestOf + 1) / 2} games)`,
+    };
   }
   // Best of 3 only allows up to 3 games; best of 5 up to 5. Already implied by the counts above.
   // Ensure the match ended exactly when the winner reached the required wins (no extra games).

@@ -4,7 +4,9 @@ import { query, Queryable, withTransaction } from '../db/database';
 import { applyElo } from '../lib/elo';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import { sendMail } from '../lib/mailer';
+import { roundName } from '../lib/bracket';
 import { GameScore, validateMatch } from '../lib/scores';
+import { bestOfFor, getTournamentMatch, recordBracketWinner } from './bracketDb';
 
 /** Game score from the caller's point of view. */
 export interface PerspectiveGame {
@@ -12,7 +14,7 @@ export interface PerspectiveGame {
   them: number;
 }
 
-interface MatchRow {
+export interface MatchRow {
   id: number;
   player_a_id: number;
   player_b_id: number;
@@ -28,6 +30,7 @@ interface MatchRow {
   rating_b_before: number | null;
   rating_a_after: number | null;
   rating_b_after: number | null;
+  tournament_match_id: number | null;
 }
 
 interface UserLite {
@@ -57,6 +60,28 @@ export async function hydrate(rows: MatchRow[], db: Queryable = { query } as Que
     userIds
   );
   const uMap = new Map(users.rows.map((u) => [u.id, u]));
+
+  // Tournament context for bracket matches (name + round label).
+  const tmIds = [...new Set(rows.map((r) => r.tournament_match_id).filter((x): x is number => x != null))];
+  const tInfo = new Map<number, { id: number; name: string; round_name: string }>();
+  if (tmIds.length > 0) {
+    const tms = await db.query<{ tm_id: number; t_id: number; name: string; round: number }>(
+      `SELECT tm.id AS tm_id, t.id AS t_id, t.name, tm.round
+       FROM tournament_matches tm JOIN tournaments t ON t.id = tm.tournament_id
+       WHERE tm.id IN (${ph(tmIds)})`,
+      tmIds
+    );
+    const tIds = [...new Set(tms.rows.map((r) => r.t_id))];
+    const maxRounds = await db.query<{ tournament_id: number; rounds: number | string }>(
+      `SELECT tournament_id, MAX(round) AS rounds FROM tournament_matches
+       WHERE tournament_id IN (${ph(tIds)}) GROUP BY tournament_id`,
+      tIds
+    );
+    const roundsOf = new Map(maxRounds.rows.map((r) => [r.tournament_id, Number(r.rounds)]));
+    for (const r of tms.rows) {
+      tInfo.set(r.tm_id, { id: r.t_id, name: r.name, round_name: roundName(r.round, roundsOf.get(r.t_id) ?? r.round) });
+    }
+  }
   const player = (id: number) => {
     const u = uMap.get(id)!;
     return { id: u.id, name: displayName(u), rating: u.rating };
@@ -79,10 +104,11 @@ export async function hydrate(rows: MatchRow[], db: Queryable = { query } as Que
     rating_b_before: r.rating_b_before,
     rating_a_after: r.rating_a_after,
     rating_b_after: r.rating_b_after,
+    tournament: r.tournament_match_id != null ? tInfo.get(r.tournament_match_id) ?? null : null,
   }));
 }
 
-function parseGames(raw: unknown): PerspectiveGame[] {
+export function parseGames(raw: unknown): PerspectiveGame[] {
   if (!Array.isArray(raw)) throw badRequest('games must be an array');
   return raw.map((g) => ({ me: Number(g?.me), them: Number(g?.them) }));
 }
@@ -108,7 +134,7 @@ async function getMatch(db: Queryable, id: number, lock = false): Promise<MatchR
   return rows[0];
 }
 
-async function insertMatch(
+export async function insertMatch(
   client: PoolClient,
   opts: {
     playerA: number;
@@ -117,18 +143,21 @@ async function insertMatch(
     games: GameScore[];
     playedAt: Date;
     parentId: number | null;
+    tournamentMatchId?: number | null;
+    /** Required format for tournament matches. */
+    bestOf?: number;
   }
 ): Promise<MatchRow> {
-  const v = validateMatch(opts.games);
+  const v = validateMatch(opts.games, opts.bestOf);
   // Explicit narrowing: Vercel compiles without strictNullChecks, where `!v.ok` doesn't narrow the union.
   if (v.ok === false) throw badRequest((v as { error: string }).error);
   const winner = (v as { aWon: boolean }).aWon ? opts.playerA : opts.playerB;
   const awaiting = opts.submittedBy === opts.playerA ? opts.playerB : opts.playerA;
 
   const { rows } = await client.query<MatchRow>(
-    `INSERT INTO matches (player_a_id, player_b_id, submitted_by, awaiting_user_id, winner_id, status, parent_match_id, played_at)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7) RETURNING *`,
-    [opts.playerA, opts.playerB, opts.submittedBy, awaiting, winner, opts.parentId, opts.playedAt]
+    `INSERT INTO matches (player_a_id, player_b_id, submitted_by, awaiting_user_id, winner_id, status, parent_match_id, played_at, tournament_match_id)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8) RETURNING *`,
+    [opts.playerA, opts.playerB, opts.submittedBy, awaiting, winner, opts.parentId, opts.playedAt, opts.tournamentMatchId ?? null]
   );
   const m = rows[0];
   for (let i = 0; i < opts.games.length; i++) {
@@ -142,7 +171,7 @@ async function insertMatch(
   return m;
 }
 
-async function notify(toUserId: number, fromUserId: number, subject: string, body: string): Promise<void> {
+export async function notify(toUserId: number, fromUserId: number, subject: string, body: string): Promise<void> {
   try {
     const { rows } = await query<UserLite>(`SELECT id, email, display_name, rating FROM users WHERE id IN ($1, $2)`, [
       toUserId,
@@ -189,19 +218,55 @@ export async function counterMatch(userId: number, matchId: number, body: Record
     const isA = old.player_a_id === userId;
     const games = parseGames(body.games).map((g) => (isA ? { a: g.me, b: g.them } : { a: g.them, b: g.me }));
     const playedAt = body.played_at ? parsePlayedAt(body.played_at) : old.played_at;
+    const bestOf = old.tournament_match_id
+      ? await bestOfFor(c, await getTournamentMatch(c, old.tournament_match_id))
+      : undefined;
 
-    await c.query(`UPDATE matches SET status = 'superseded', awaiting_user_id = NULL WHERE id = $1`, [old.id]);
-    return insertMatch(c, {
+    // Insert (and validate) the new version first, then retire the old one.
+    const created = await insertMatch(c, {
       playerA: old.player_a_id,
       playerB: old.player_b_id,
       submittedBy: userId,
       games,
       playedAt,
       parentId: old.id,
+      tournamentMatchId: old.tournament_match_id,
+      bestOf,
     });
+    await c.query(`UPDATE matches SET status = 'superseded', awaiting_user_id = NULL WHERE id = $1`, [old.id]);
+    return created;
   });
   await notify(created.awaiting_user_id!, userId, '{from} corrected your ping pong match result', '{from} proposed a different result for your match. Please review it:');
   return (await hydrate([created]))[0];
+}
+
+/**
+ * Confirms a pending match inside a transaction: applies Elo to both players and, for
+ * tournament matches, advances the winner in the bracket. Callers check permissions.
+ */
+export async function applyConfirmation(c: PoolClient, m: MatchRow): Promise<MatchRow> {
+  const players = await c.query<{ id: number; rating: number }>(
+    `SELECT id, rating FROM users WHERE id IN ($1, $2) ORDER BY id FOR UPDATE`,
+    [m.player_a_id, m.player_b_id]
+  );
+  const ra = players.rows.find((p) => p.id === m.player_a_id)!.rating;
+  const rb = players.rows.find((p) => p.id === m.player_b_id)!.rating;
+  const { newA, newB } = applyElo(ra, rb, m.winner_id === m.player_a_id);
+
+  // Guard against double-confirm races: only one UPDATE can flip pending -> confirmed.
+  const upd = await c.query<MatchRow>(
+    `UPDATE matches SET status = 'confirmed', awaiting_user_id = NULL, confirmed_at = NOW(),
+       rating_a_before = $2, rating_b_before = $3, rating_a_after = $4, rating_b_after = $5
+     WHERE id = $1 AND status = 'pending' RETURNING *`,
+    [m.id, ra, rb, newA, newB]
+  );
+  if (upd.rows.length === 0) throw conflict('This match is no longer pending');
+  await c.query(`UPDATE users SET rating = $1 WHERE id = $2`, [newA, m.player_a_id]);
+  await c.query(`UPDATE users SET rating = $1 WHERE id = $2`, [newB, m.player_b_id]);
+  if (m.tournament_match_id) {
+    await recordBracketWinner(c, m.tournament_match_id, m.winner_id, 'completed', m.id);
+  }
+  return upd.rows[0];
 }
 
 export async function confirmMatch(userId: number, matchId: number) {
@@ -209,29 +274,12 @@ export async function confirmMatch(userId: number, matchId: number) {
     const m = await getMatch(c, matchId, true);
     if (m.status !== 'pending') throw conflict('This match is no longer pending');
     if (m.awaiting_user_id !== userId) throw forbidden('Only the opponent can confirm this result');
-
-    const players = await c.query<{ id: number; rating: number }>(
-      `SELECT id, rating FROM users WHERE id IN ($1, $2) ORDER BY id FOR UPDATE`,
-      [m.player_a_id, m.player_b_id]
-    );
-    const ra = players.rows.find((p) => p.id === m.player_a_id)!.rating;
-    const rb = players.rows.find((p) => p.id === m.player_b_id)!.rating;
-    const { newA, newB } = applyElo(ra, rb, m.winner_id === m.player_a_id);
-
-    // Guard against double-confirm races: only one UPDATE can flip pending -> confirmed.
-    const upd = await c.query<MatchRow>(
-      `UPDATE matches SET status = 'confirmed', awaiting_user_id = NULL, confirmed_at = NOW(),
-         rating_a_before = $2, rating_b_before = $3, rating_a_after = $4, rating_b_after = $5
-       WHERE id = $1 AND status = 'pending' RETURNING *`,
-      [m.id, ra, rb, newA, newB]
-    );
-    if (upd.rows.length === 0) throw conflict('This match is no longer pending');
-    await c.query(`UPDATE users SET rating = $1 WHERE id = $2`, [newA, m.player_a_id]);
-    await c.query(`UPDATE users SET rating = $1 WHERE id = $2`, [newB, m.player_b_id]);
-    return upd.rows[0];
+    return applyConfirmation(c, m);
   });
   return (await hydrate([confirmed]))[0];
 }
+
+export { getMatch, parsePlayedAt };
 
 export async function withdrawMatch(userId: number, matchId: number) {
   const m = await getMatch({ query } as Queryable, matchId);

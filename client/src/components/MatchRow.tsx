@@ -27,6 +27,18 @@ export default function MatchRow({ match: m, viewerId }: { match: Match; viewerI
         <Typography component="span" color="text.secondary" sx={{ ml: 1 }}>
           {games}
         </Typography>
+        {m.tournament && (
+          <Link
+            component={RouterLink}
+            to={`/tournaments/${m.tournament.id}`}
+            variant="caption"
+            sx={{ display: 'block' }}
+            underline="hover"
+            color="secondary"
+          >
+            {m.tournament.name} · {m.tournament.round_name}
+          </Link>
+        )}
       </Typography>
       <Typography variant="body2" color="text.secondary">
         {dayjs(m.played_at).format('MMM D')}

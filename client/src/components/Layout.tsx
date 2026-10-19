@@ -24,13 +24,14 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
   const theme = useTheme();
-  const compact = useMediaQuery(theme.breakpoints.down('md'));
+  const compact = useMediaQuery(theme.breakpoints.down('lg'));
   const [open, setOpen] = useState(false);
 
   const nav = [
     { to: '/', label: 'Home' },
     { to: '/record', label: 'Record match' },
     { to: '/leaderboard', label: 'Leaderboard' },
+    { to: '/tournaments', label: 'Tournaments' },
     { to: `/players/${user!.id}`, label: 'My profile' },
     { to: '/account', label: 'Account' },
     ...(user!.is_admin ? [{ to: '/admin', label: 'Admin' }] : []),

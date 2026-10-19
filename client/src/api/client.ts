@@ -10,6 +10,7 @@ export interface Me {
   display_name: string | null;
   rating: number;
   is_admin: boolean;
+  is_owner: boolean;
   must_change_password: boolean;
 }
 
@@ -20,6 +21,8 @@ export interface AdminUser {
   rating: number;
   has_password: boolean;
   must_change_password: boolean;
+  is_admin: boolean;
+  is_owner: boolean;
   created_at: string;
 }
 
@@ -51,6 +54,7 @@ export interface Match {
   rating_b_before: number | null;
   rating_a_after: number | null;
   rating_b_after: number | null;
+  tournament: { id: number; name: string; round_name: string } | null;
 }
 
 export interface GameInput {
@@ -69,6 +73,61 @@ export interface HeadToHead {
   a_points: number;
   b_points: number;
   matches: Match[];
+}
+
+export type TournamentStatus = 'signup' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface TournamentInput {
+  name: string;
+  starts_on: string;
+  signup_deadline: string;
+  best_of: number;
+  quarters_best_of: number | null;
+  semis_best_of: number | null;
+  final_best_of: number | null;
+  max_players: number | null;
+}
+
+export interface TournamentSummary extends Omit<TournamentInput, 'signup_deadline'> {
+  id: number;
+  signup_deadline: string;
+  status: TournamentStatus;
+  drawn_at: string | null;
+  completed_at: string | null;
+  winner_id: number | null;
+  winner_name?: string | null;
+  entrant_count: number;
+  entered: boolean;
+  signup_open: boolean;
+}
+
+export interface BracketPlayer extends Player {
+  seed: number | null;
+}
+
+export interface BracketMatch {
+  id: number;
+  round: number;
+  position: number;
+  status: 'waiting' | 'ready' | 'completed' | 'bye' | 'walkover';
+  player1: BracketPlayer | null;
+  player2: BracketPlayer | null;
+  winner_id: number | null;
+  result: Match | null;
+  pending: Match | null;
+}
+
+export interface BracketRound {
+  round: number;
+  name: string;
+  best_of: number;
+  matches: BracketMatch[];
+}
+
+export interface TournamentDetail extends TournamentSummary {
+  winner: BracketPlayer | null;
+  entrants: (Player & { seed: number | null; joined_at: string })[];
+  rounds: BracketRound[];
 }
 
 export class ApiError extends Error {
@@ -104,6 +163,27 @@ export const api = {
   adminUsers: () => request<AdminUser[]>('GET', '/admin/users'),
   adminResetPassword: (id: number) =>
     request<{ email: string; temporary_password: string }>('POST', `/admin/users/${id}/reset-password`),
+  setAdmin: (id: number, admin: boolean) =>
+    request<{ id: number; is_admin: boolean }>('POST', `/admin/users/${id}/admin`, { admin }),
+
+  tournaments: () => request<TournamentSummary[]>('GET', '/tournaments'),
+  tournament: (id: number) => request<TournamentDetail>('GET', `/tournaments/${id}`),
+  createTournament: (body: TournamentInput) => request<TournamentDetail>('POST', '/tournaments', body),
+  updateTournament: (id: number, body: Partial<TournamentInput>) =>
+    request<TournamentDetail>('PATCH', `/tournaments/${id}`, body),
+  cancelTournament: (id: number) => request<TournamentDetail>('POST', `/tournaments/${id}/cancel`),
+  tournamentSignup: (id: number) => request<TournamentDetail>('POST', `/tournaments/${id}/signup`),
+  tournamentWithdraw: (id: number) => request<TournamentDetail>('POST', `/tournaments/${id}/withdraw`),
+  removeEntrant: (id: number, userId: number) =>
+    request<TournamentDetail>('DELETE', `/tournaments/${id}/entries/${userId}`),
+  generateBracket: (id: number) => request<TournamentDetail>('POST', `/tournaments/${id}/generate`),
+  submitTournamentResult: (id: number, tmId: number, games: GameInput[], played_at?: string) =>
+    request<Match>('POST', `/tournaments/${id}/matches/${tmId}/result`, { games, played_at }),
+  adminTournamentResult: (
+    id: number,
+    tmId: number,
+    body: { games: { p1: number; p2: number }[] } | { walkover: number }
+  ) => request<TournamentDetail>('POST', `/tournaments/${id}/matches/${tmId}/admin-result`, body),
 
   users: () => request<LeaderboardRow[]>('GET', '/users'),
   user: (id: number) => request<Profile>('GET', `/users/${id}`),

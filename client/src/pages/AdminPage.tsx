@@ -33,6 +33,22 @@ export default function AdminPage() {
   const [confirming, setConfirming] = useState<AdminUser | null>(null);
   const [result, setResult] = useState<{ email: string; temporary_password: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [roleChange, setRoleChange] = useState<{ user: AdminUser; admin: boolean } | null>(null);
+
+  const isOwner = user!.is_owner;
+  /** Mirrors the server rules: nobody resets an owner; only owners reset other admins. */
+  const canReset = (u: AdminUser) => u.id !== user!.id && !u.is_owner && (isOwner || !u.is_admin);
+
+  const changeRole = async (u: AdminUser, admin: boolean) => {
+    setRoleChange(null);
+    setError(null);
+    try {
+      await api.setAdmin(u.id, admin);
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
 
   const load = useCallback(() => {
     api
@@ -69,6 +85,7 @@ export default function AdminPage() {
         <Typography color="text.secondary" sx={{ mb: 2 }}>
           Resetting a password signs the user out everywhere and gives you a temporary password to share with them.
           They'll be asked to choose a new one when they sign in.
+          {isOwner && ' As an owner, you can also make users admins or revoke that role.'}
         </Typography>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -82,7 +99,8 @@ export default function AdminPage() {
               <TableRow>
                 <TableCell>Name</TableCell>
                 <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Email</TableCell>
-                <TableCell>Status</TableCell>
+                <TableCell>Role</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Status</TableCell>
                 <TableCell />
               </TableRow>
             </TableHead>
@@ -97,6 +115,17 @@ export default function AdminPage() {
                   </TableCell>
                   <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{u.email}</TableCell>
                   <TableCell>
+                    {u.is_owner ? (
+                      <Chip size="small" color="primary" label="Owner" />
+                    ) : u.is_admin ? (
+                      <Chip size="small" color="secondary" label="Admin" />
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        Player
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                     {!u.has_password ? (
                       <Chip size="small" label="No password" />
                     ) : u.must_change_password ? (
@@ -106,11 +135,23 @@ export default function AdminPage() {
                     )}
                   </TableCell>
                   <TableCell align="right">
-                    {u.id !== user!.id && (
-                      <Button size="small" onClick={() => setConfirming(u)} sx={{ whiteSpace: 'nowrap' }}>
-                        Reset password
-                      </Button>
-                    )}
+                    <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      {isOwner && !u.is_owner && (
+                        <Button
+                          size="small"
+                          color={u.is_admin ? 'warning' : 'primary'}
+                          onClick={() => setRoleChange({ user: u, admin: !u.is_admin })}
+                          sx={{ whiteSpace: 'nowrap' }}
+                        >
+                          {u.is_admin ? 'Revoke admin' : 'Make admin'}
+                        </Button>
+                      )}
+                      {canReset(u) && (
+                        <Button size="small" onClick={() => setConfirming(u)} sx={{ whiteSpace: 'nowrap' }}>
+                          Reset password
+                        </Button>
+                      )}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))}
@@ -118,6 +159,27 @@ export default function AdminPage() {
           </Table>
         </TableContainer>
       </CardContent>
+
+      <Dialog open={!!roleChange} onClose={() => setRoleChange(null)}>
+        <DialogTitle>{roleChange?.admin ? 'Make admin?' : 'Revoke admin?'}</DialogTitle>
+        <DialogContent>
+          <Typography>
+            {roleChange?.admin
+              ? `${roleChange.user.display_name ?? roleChange.user.email} will be able to create and run tournaments, set results and reset players' passwords.`
+              : `${roleChange?.user.display_name ?? roleChange?.user.email} will lose admin access immediately.`}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRoleChange(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color={roleChange?.admin ? 'primary' : 'warning'}
+            onClick={() => roleChange && changeRole(roleChange.user, roleChange.admin)}
+          >
+            {roleChange?.admin ? 'Make admin' : 'Revoke'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={!!confirming} onClose={() => setConfirming(null)}>
         <DialogTitle>Reset password?</DialogTitle>

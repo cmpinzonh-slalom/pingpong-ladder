@@ -52,3 +52,59 @@ CREATE TABLE IF NOT EXISTS match_games (
 );
 
 CREATE INDEX IF NOT EXISTS idx_match_games_match ON match_games(match_id);
+
+-- Admin role granted in-app by owners (owners themselves come from the ADMIN_EMAILS env var).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ───────────── Tournaments ─────────────
+-- status: signup | in_progress | completed | cancelled
+-- best_of is the default format; final/semis/quarters overrides are counted back from the final.
+CREATE TABLE IF NOT EXISTS tournaments (
+  id                SERIAL PRIMARY KEY,
+  name              TEXT NOT NULL,
+  starts_on         DATE NOT NULL,
+  signup_deadline   TIMESTAMPTZ NOT NULL,
+  best_of           INTEGER NOT NULL DEFAULT 3,
+  quarters_best_of  INTEGER,
+  semis_best_of     INTEGER,
+  final_best_of     INTEGER,
+  max_players       INTEGER,
+  status            TEXT NOT NULL DEFAULT 'signup',
+  created_by        INTEGER NOT NULL REFERENCES users(id),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  drawn_at          TIMESTAMPTZ,
+  completed_at      TIMESTAMPTZ,
+  winner_id         INTEGER REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS tournament_entries (
+  id              SERIAL PRIMARY KEY,
+  tournament_id   INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  user_id         INTEGER NOT NULL REFERENCES users(id),
+  joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  withdrawn_at    TIMESTAMPTZ,
+  seed            INTEGER,
+  rating_at_draw  INTEGER,
+  UNIQUE (tournament_id, user_id)
+);
+
+-- One row per bracket slot. round 1 is the first round; position is 0-based within the round.
+-- status: waiting (players not known yet) | ready | completed | bye | walkover
+CREATE TABLE IF NOT EXISTS tournament_matches (
+  id             SERIAL PRIMARY KEY,
+  tournament_id  INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  round          INTEGER NOT NULL,
+  position       INTEGER NOT NULL,
+  player1_id     INTEGER REFERENCES users(id),
+  player2_id     INTEGER REFERENCES users(id),
+  winner_id      INTEGER REFERENCES users(id),
+  status         TEXT NOT NULL DEFAULT 'waiting',
+  match_id       INTEGER REFERENCES matches(id),
+  UNIQUE (tournament_id, round, position)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tournament_matches_t ON tournament_matches(tournament_id);
+
+-- Links a (pending/confirmed) result to its bracket slot. NULL for regular ladder matches.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS tournament_match_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_matches_tournament_match ON matches(tournament_match_id);
