@@ -280,7 +280,8 @@ export async function applyConfirmation(c: PoolClient, m: MatchRow): Promise<Mat
   // Guard against double-confirm races: only one UPDATE can flip pending -> confirmed.
   const upd = await c.query<MatchRow>(
     `UPDATE matches SET status = 'confirmed', awaiting_user_id = NULL, confirmed_at = NOW(),
-       rating_a_before = $2, rating_b_before = $3, rating_a_after = $4, rating_b_after = $5
+       rating_a_before = $2, rating_b_before = $3, rating_a_after = $4, rating_b_after = $5,
+       rating_seq = nextval('rating_event_seq')
      WHERE id = $1 AND status = 'pending' RETURNING *`,
     [m.id, ra, rb, newA, newB]
   );

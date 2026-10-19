@@ -84,6 +84,7 @@ router.get('/users/:id/rating-history', async (req, res) => {
   const matches = await query<{
     id: number;
     confirmed_at: Date;
+    rating_seq: string | number | null;
     player_a_id: number;
     player_b_id: number;
     winner_id: number;
@@ -92,14 +93,21 @@ router.get('/users/:id/rating-history', async (req, res) => {
     rating_a_after: number;
     rating_b_after: number;
   }>(
-    `SELECT id, confirmed_at, player_a_id, player_b_id, winner_id,
+    `SELECT id, confirmed_at, rating_seq, player_a_id, player_b_id, winner_id,
             rating_a_before, rating_b_before, rating_a_after, rating_b_after
      FROM matches WHERE status IN ('confirmed', 'voided') AND confirmed_at IS NOT NULL
        AND (player_a_id = $1 OR player_b_id = $1)`,
     [id]
   );
-  const adjustments = await query<{ id: number; created_at: Date; rating_before: number; rating_after: number; reason: string }>(
-    `SELECT id, created_at, rating_before, rating_after, reason FROM rating_adjustments WHERE user_id = $1`,
+  const adjustments = await query<{
+    id: number;
+    created_at: Date;
+    rating_seq: string | number | null;
+    rating_before: number;
+    rating_after: number;
+    reason: string;
+  }>(
+    `SELECT id, created_at, rating_seq, rating_before, rating_after, reason FROM rating_adjustments WHERE user_id = $1`,
     [id]
   );
   const oppIds = [...new Set(matches.rows.map((m) => (m.player_a_id === id ? m.player_b_id : m.player_a_id)))];
@@ -113,13 +121,21 @@ router.get('/users/:id/rating-history', async (req, res) => {
   const oppName = new Map(opps.rows.map((u) => [u.id, displayName(u)]));
 
   // Voided matches stay in the history at the time they happened; their reversal appears as an adjustment later.
-  type Point = { at: Date; rating_before: number; rating: number; kind: 'match' | 'adjustment'; label: string };
+  type Point = {
+    at: Date;
+    seq: number | null;
+    rating_before: number;
+    rating: number;
+    kind: 'match' | 'adjustment';
+    label: string;
+  };
   const points: Point[] = [
     ...matches.rows.map((m): Point => {
       const isA = m.player_a_id === id;
       const opp = isA ? m.player_b_id : m.player_a_id;
       return {
         at: new Date(m.confirmed_at),
+        seq: m.rating_seq == null ? null : Number(m.rating_seq),
         rating_before: isA ? m.rating_a_before : m.rating_b_before,
         rating: isA ? m.rating_a_after : m.rating_b_after,
         kind: 'match',
@@ -129,13 +145,21 @@ router.get('/users/:id/rating-history', async (req, res) => {
     ...adjustments.rows.map(
       (a): Point => ({
         at: new Date(a.created_at),
+        seq: a.rating_seq == null ? null : Number(a.rating_seq),
         rating_before: a.rating_before,
         rating: a.rating_after,
         kind: 'adjustment',
         label: a.reason,
       })
     ),
-  ].sort((x, y) => x.at.getTime() - y.at.getTime());
+  ]
+    // Order by when each change was applied (rating_seq); timestamps can tie within one transaction.
+    // Rows from before the sequence existed have no seq; they all predate sequenced rows.
+    .sort((x, y) => {
+      if (x.seq !== null && y.seq !== null) return x.seq - y.seq;
+      if (x.seq === null && y.seq === null) return x.at.getTime() - y.at.getTime();
+      return x.seq === null ? -1 : 1;
+    });
 
   res.json({
     current: user.rows[0].rating,

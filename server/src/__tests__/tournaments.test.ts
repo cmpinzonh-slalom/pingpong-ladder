@@ -51,6 +51,18 @@ function adminResult(agent: Agent, id: number, tm: { id: number; player1: { id: 
     .send({ ...body, expected_player1_id: tm.player1.id, expected_player2_id: tm.player2.id });
 }
 
+/** Player result submission including the opponent the player saw (required by the API). */
+function playerResult(
+  agent: Agent,
+  id: number,
+  tm: { id: number; player1: { id: number } | null; player2: { id: number } | null },
+  me: number,
+  body: object
+) {
+  const opp = tm.player1?.id === me ? tm.player2?.id : tm.player1?.id;
+  return agent.post(`/api/tournaments/${id}/matches/${tm.id}/result`).send({ ...body, expected_opponent_id: opp });
+}
+
 const win2 = [
   { me: 11, them: 5 },
   { me: 11, them: 7 },
@@ -158,11 +170,11 @@ describe('tournament play', () => {
     const { a, b, c, id, tmId } = await twoPlayerFinal({ final_best_of: 3 });
 
     await c.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(403);
-    await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: [{ me: 11, them: 3 }] }).expect(400);
+    await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: [{ me: 11, them: 3 }] }).expect(400);
 
-    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(201)).body;
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: win2 }).expect(201)).body;
     expect(m.tournament).toMatchObject({ id, name: 'Autumn Cup', round_name: 'Final' });
-    await b.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(409); // already pending
+    await b.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: a.id, games: win2 }).expect(409); // already pending
 
     // Shows on B's dashboard
     const pend = await b.agent.get('/api/matches/pending').expect(200);
@@ -220,7 +232,7 @@ describe('tournament play', () => {
     // Semi 2 via players
     const s2Winner = ps.find((p) => p.id === semi2.player1.id)!;
     const s2Loser = ps.find((p) => p.id === semi2.player2.id)!;
-    const m = (await s2Winner.agent.post(`/api/tournaments/${id}/matches/${semi2.id}/result`).send({ games: [{ me: 11, them: 8 }] }).expect(201)).body;
+    const m = (await s2Winner.agent.post(`/api/tournaments/${id}/matches/${semi2.id}/result`).send({ expected_opponent_id: semi2.player2.id, games: [{ me: 11, them: 8 }] }).expect(201)).body;
     await s2Loser.agent.post(`/api/matches/${m.id}/confirm`).expect(200);
 
     t = (await owner.agent.get(`/api/tournaments/${id}`).expect(200)).body;
@@ -228,7 +240,7 @@ describe('tournament play', () => {
 
     // Final started (pending submission) -> semis can no longer be overridden
     const finalist = ps.find((p) => p.id === semi1.player2.id)!;
-    await finalist.agent.post(`/api/tournaments/${id}/matches/${finalId}/result`).send({ games: [{ me: 11, them: 6 }] }).expect(201);
+    await finalist.agent.post(`/api/tournaments/${id}/matches/${finalId}/result`).send({ expected_opponent_id: s2Winner.id, games: [{ me: 11, them: 6 }] }).expect(201);
     await adminResult(owner.agent, id, semi2, { walkover: semi2.player2.id }).expect(409);
 
     // Admin resolves the final with a walkover; pending submission is set aside
@@ -241,6 +253,34 @@ describe('tournament play', () => {
 
     // Non-admins can't use admin results
     await adminResult(finalist.agent, id, finalTm, { walkover: finalist.id }).expect(403);
+  });
+
+  it('rejects player results from a stale view of the bracket', async () => {
+    const owner = await signup('owner@slalom.com', 'Owner');
+    const ps = await players(4);
+    const id = await createTournament(owner.agent, { best_of: 1 });
+    for (const p of ps) await p.agent.post(`/api/tournaments/${id}/signup`).expect(200);
+    let t = await closeAndDraw(owner.agent, id);
+    const [semi1, semi2] = t.rounds[0].matches;
+    await adminResult(owner.agent, id, semi1, { walkover: semi1.player1.id }).expect(200);
+    await adminResult(owner.agent, id, semi2, { walkover: semi2.player1.id }).expect(200);
+    t = (await owner.agent.get(`/api/tournaments/${id}`)).body;
+    const staleFinal = t.rounds[1].matches[0]; // what semi2's winner sees in their dialog
+
+    // An admin overrides semi 1, so the finalist's opponent changes
+    await adminResult(owner.agent, id, semi1, { walkover: semi1.player2.id }).expect(200);
+
+    const finalist = ps.find((p) => p.id === semi2.player1.id)!;
+    const r = await playerResult(finalist.agent, id, staleFinal, finalist.id, { games: [{ me: 11, them: 4 }] });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/opponent .* changed/);
+    expect((await owner.agent.get(`/api/tournaments/${id}`)).body.rounds[1].matches[0].pending).toBeNull();
+
+    // Missing expectation is rejected outright
+    await finalist.agent
+      .post(`/api/tournaments/${id}/matches/${staleFinal.id}/result`)
+      .send({ games: [{ me: 11, them: 4 }] })
+      .expect(400);
   });
 
   it('rejects admin results from a stale view of the bracket', async () => {
@@ -273,7 +313,7 @@ describe('tournament play', () => {
 
   it('reverses ratings when a confirmed result is overridden', async () => {
     const { owner, a, b, id, tmId, tm } = await twoPlayerFinal({ best_of: 1 });
-    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: [{ me: 11, them: 4 }] }).expect(201)).body;
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: [{ me: 11, them: 4 }] }).expect(201)).body;
     await b.agent.post(`/api/matches/${m.id}/confirm`).expect(200);
     const before = (await a.agent.get('/api/me')).body.rating;
     expect(before).not.toBe(1490);
@@ -291,7 +331,7 @@ describe('tournament play', () => {
   it('keeps rating history consistent when a result is overridden after a later ladder match', async () => {
     const { owner, a, b, id, tmId, tm } = await twoPlayerFinal({ best_of: 1 });
     // a wins the tournament final...
-    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: [{ me: 11, them: 4 }] }).expect(201)).body;
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: [{ me: 11, them: 4 }] }).expect(201)).body;
     await b.agent.post(`/api/matches/${m.id}/confirm`).expect(200);
     const afterTournament = (await a.agent.get('/api/me')).body.rating;
     // ...then a ladder match
@@ -321,20 +361,46 @@ describe('tournament play', () => {
     }
   });
 
+  it('orders history correctly when a confirmed result is replaced by another scored result', async () => {
+    const { owner, a, b, id, tmId, tm } = await twoPlayerFinal({ best_of: 1 });
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: [{ me: 11, them: 4 }] }).expect(201)).body;
+    await b.agent.post(`/api/matches/${m.id}/confirm`).expect(200);
+
+    // Admin replaces the confirmed result with a different scored result (b wins). The reversal and the
+    // replacement confirmation happen in one transaction, so their timestamps are identical.
+    await adminResult(owner.agent, id, tm, { games: [{ p1: tm.player1.id === b.id ? 11 : 6, p2: tm.player1.id === b.id ? 6 : 11 }] }).expect(200);
+    // pg-mem's NOW() advances within a transaction; real Postgres's doesn't. Reproduce the tie explicitly:
+    // the original confirmation, the reversal and the replacement all share one timestamp.
+    sql(`UPDATE matches SET confirmed_at = '2026-10-01T12:00:00Z' WHERE confirmed_at IS NOT NULL`);
+    sql(`UPDATE rating_adjustments SET created_at = '2026-10-01T12:00:00Z'`);
+
+    for (const p of [a, b]) {
+      const h = (await p.agent.get(`/api/users/${p.id}/rating-history`).expect(200)).body;
+      const me = (await p.agent.get('/api/me')).body;
+      expect(h.points.map((x: { kind: string }) => x.kind)).toEqual(['match', 'adjustment', 'match']);
+      expect(h.points[h.points.length - 1].rating).toBe(me.rating);
+      let prev = h.start;
+      for (const pt of h.points) {
+        expect(pt.rating_before).toBe(prev);
+        prev = pt.rating;
+      }
+    }
+  });
+
   it('cancelling withdraws pending submissions and freezes the bracket', async () => {
     const { owner, a, b, id, tmId, tm } = await twoPlayerFinal();
-    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(201)).body;
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: win2 }).expect(201)).body;
     await owner.agent.post(`/api/tournaments/${id}/cancel`).expect(200);
     expect((await b.agent.get('/api/matches/pending')).body.awaiting_me).toHaveLength(0);
     await b.agent.post(`/api/matches/${m.id}/confirm`).expect(409);
-    await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(409);
+    await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: win2 }).expect(409);
     await adminResult(owner.agent, id, tm, { walkover: a.id }).expect(409);
     expect((await a.agent.get(`/api/tournaments/${id}`)).body.status).toBe('cancelled');
   });
 
   it('rejects confirming or correcting a pending tournament result once the tournament is cancelled', async () => {
     const { a, b, id, tmId } = await twoPlayerFinal();
-    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(201)).body;
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ expected_opponent_id: b.id, games: win2 }).expect(201)).body;
     // Flip the status directly (as if a cancel committed concurrently) to exercise the check under lock
     sql(`UPDATE tournaments SET status = 'cancelled' WHERE id = ${id}`);
     await b.agent.post(`/api/matches/${m.id}/confirm`).expect(409);

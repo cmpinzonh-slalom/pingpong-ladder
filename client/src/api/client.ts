@@ -184,8 +184,13 @@ export const api = {
   removeEntrant: (id: number, userId: number) =>
     request<TournamentDetail>('DELETE', `/tournaments/${id}/entries/${userId}`),
   generateBracket: (id: number) => request<TournamentDetail>('POST', `/tournaments/${id}/generate`),
-  submitTournamentResult: (id: number, tmId: number, games: GameInput[], played_at?: string) =>
-    request<Match>('POST', `/tournaments/${id}/matches/${tmId}/result`, { games, played_at }),
+  /** expectedOpponentId: the opponent shown to the player; the server rejects the result if it changed. */
+  submitTournamentResult: (id: number, tmId: number, expectedOpponentId: number, games: GameInput[], played_at?: string) =>
+    request<Match>('POST', `/tournaments/${id}/matches/${tmId}/result`, {
+      games,
+      played_at,
+      expected_opponent_id: expectedOpponentId,
+    }),
   adminTournamentResult: (
     id: number,
     tmId: number,

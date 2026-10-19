@@ -127,12 +127,21 @@ export default function TournamentPage() {
     if (!recording) return;
     setDialogError(null);
     try {
-      await api.submitTournamentResult(t.id, recording.id, toGames(games), toPlayedAt(dayjs().format('YYYY-MM-DD')));
+      const opponent = recording.player1?.id === me ? recording.player2 : recording.player1;
+      await api.submitTournamentResult(
+        t.id,
+        recording.id,
+        opponent!.id,
+        toGames(games),
+        toPlayedAt(dayjs().format('YYYY-MM-DD'))
+      );
       setRecording(null);
       setFlash('Result sent to your opponent for confirmation');
       load();
     } catch (err) {
       setDialogError((err as Error).message);
+      // The bracket moved on (e.g. an admin changed a feeder match): refresh what's on screen.
+      if (err instanceof ApiError && err.status === 409) load();
     }
   };
 

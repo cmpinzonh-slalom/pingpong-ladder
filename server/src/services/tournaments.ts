@@ -409,6 +409,11 @@ export async function submitResult(userId: number, tournamentId: number, tmId: n
       throw conflict('A result is already waiting for confirmation. Confirm or correct it from your dashboard.');
     }
     const opponent = userId === tm.player1_id ? tm.player2_id! : tm.player1_id!;
+    // The player's dialog may be stale (e.g. an admin override advanced a different opponent).
+    if (body.expected_opponent_id === undefined) throw badRequest('expected_opponent_id is required');
+    if (Number(body.expected_opponent_id) !== opponent) {
+      throw conflict('Your opponent in this match has changed. Refresh the bracket and try again.');
+    }
     const games = parseGames(body.games).map((g) => ({ a: g.me, b: g.them }));
     return insertMatch(c, {
       playerA: userId,
@@ -514,7 +519,8 @@ async function voidConfirmed(c: PoolClient, m: MatchRow): Promise<void> {
     await c.query(`UPDATE users SET rating = $2 WHERE id = $1`, [uid, after]);
     // Record the reversal so rating history (and the profile chart) stays consistent with the current rating.
     await c.query(
-      `INSERT INTO rating_adjustments (user_id, rating_before, rating_after, reason, match_id) VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO rating_adjustments (user_id, rating_before, rating_after, reason, match_id, rating_seq)
+       VALUES ($1, $2, $3, $4, $5, nextval('rating_event_seq'))`,
       [uid, before, after, 'Tournament result overridden', m.id]
     );
   }

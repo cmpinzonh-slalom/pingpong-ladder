@@ -122,3 +122,9 @@ CREATE TABLE IF NOT EXISTS rating_adjustments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rating_adjustments_user ON rating_adjustments(user_id);
+
+-- Global order in which rating changes were applied. Timestamps can tie (NOW() is fixed per transaction,
+-- e.g. an override that reverses one result and confirms another), so history is ordered by this sequence.
+CREATE SEQUENCE IF NOT EXISTS rating_event_seq;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS rating_seq BIGINT;
+ALTER TABLE rating_adjustments ADD COLUMN IF NOT EXISTS rating_seq BIGINT;
