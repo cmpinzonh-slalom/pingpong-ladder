@@ -67,14 +67,22 @@ function parseFormat(raw: unknown, field: string, optional: boolean): number | n
   return n;
 }
 
+/**
+ * True only for real calendar dates. JS normalizes impossible dates (2026-02-30 -> March 2),
+ * so require the parsed UTC date to round-trip to the exact input.
+ */
+export function isCalendarDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 function parseTournamentInput(body: Record<string, unknown>): TournamentInput {
   const name = String(body.name ?? '').trim();
   if (name.length < 3 || name.length > 80) throw badRequest('Name must be 3-80 characters');
 
   const startsOn = String(body.starts_on ?? '');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn) || isNaN(new Date(startsOn).getTime())) {
-    throw badRequest('starts_on must be a date (YYYY-MM-DD)');
-  }
+  if (!isCalendarDate(startsOn)) throw badRequest('starts_on must be a valid date (YYYY-MM-DD)');
 
   const deadline = new Date(String(body.signup_deadline ?? ''));
   if (isNaN(deadline.getTime())) throw badRequest('signup_deadline must be a date and time');
@@ -483,13 +491,15 @@ async function voidConfirmed(c: PoolClient, m: MatchRow): Promise<void> {
   const dA = (m.rating_a_after ?? 0) - (m.rating_a_before ?? 0);
   const dB = (m.rating_b_after ?? 0) - (m.rating_b_before ?? 0);
   // Lock players in ascending id order, matching applyConfirmation, to avoid deadlocks.
+  // FOR NO KEY UPDATE (not FOR UPDATE): rating-only changes don't conflict with the KEY SHARE locks
+  // that foreign keys take when matches referencing these users are inserted.
   const changes: [number, number][] = [
     [m.player_a_id, dA],
     [m.player_b_id, dB],
   ];
   changes.sort((x, y) => x[0] - y[0]);
   for (const [uid, delta] of changes) {
-    const { rows } = await c.query<{ rating: number }>(`SELECT rating FROM users WHERE id = $1 FOR UPDATE`, [uid]);
+    const { rows } = await c.query<{ rating: number }>(`SELECT rating FROM users WHERE id = $1 FOR NO KEY UPDATE`, [uid]);
     await c.query(`UPDATE users SET rating = $2 WHERE id = $1`, [uid, rows[0].rating - delta]);
   }
   await c.query(`UPDATE matches SET status = 'voided' WHERE id = $1`, [m.id]);

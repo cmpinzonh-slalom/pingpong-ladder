@@ -60,9 +60,16 @@ describe('tournament setup', () => {
       .send({ name: 'Bad format', starts_on: '2026-11-01', signup_deadline: future(), best_of: 2 })
       .expect(400);
 
+    // Impossible calendar dates are rejected with a validation error, not a DB error
+    for (const bad of ['2026-02-30', '2026-13-01', '2026-04-31', '2026-1-01']) {
+      const r = await owner.agent.post('/api/tournaments').send({ name: 'Bad date', starts_on: bad, signup_deadline: future() });
+      expect(r.status).toBe(400);
+    }
+    await owner.agent.post('/api/tournaments').send({ name: 'Leap', starts_on: '2028-02-29', signup_deadline: future() }).expect(201);
+
     const id = await createTournament(owner.agent, { final_best_of: 5 });
     const list = await p.agent.get('/api/tournaments').expect(200);
-    expect(list.body[0]).toMatchObject({ id, name: 'Autumn Cup', starts_on: '2026-11-01', best_of: 3, final_best_of: 5, signup_open: true });
+    expect(list.body.find((x: { id: number }) => x.id === id)).toMatchObject({ id, name: 'Autumn Cup', starts_on: '2026-11-01', best_of: 3, final_best_of: 5, signup_open: true });
   });
 
   it('handles sign-up, withdrawal, caps and the deadline', async () => {

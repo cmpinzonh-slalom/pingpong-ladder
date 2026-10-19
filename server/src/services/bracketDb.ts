@@ -52,7 +52,7 @@ export async function getTournament(db: Queryable, id: number, lock = false): Pr
 
 /**
  * LOCK ORDER (all tournament code paths must follow it to avoid deadlocks and lost updates):
- *   1. tournaments row   2. tournament_matches row   3. matches row(s)   4. users rows, ascending id
+ *   1. tournaments row   2. tournament_matches row   3. matches row(s)   4. users rows, ascending id (FOR NO KEY UPDATE)
  * Callers re-validate state after acquiring the locks.
  */
 export async function lockBracket(

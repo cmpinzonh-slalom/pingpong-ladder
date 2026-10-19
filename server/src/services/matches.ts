@@ -250,8 +250,11 @@ export async function counterMatch(userId: number, matchId: number, body: Record
  * tournament matches, advances the winner in the bracket. Callers check permissions.
  */
 export async function applyConfirmation(c: PoolClient, m: MatchRow): Promise<MatchRow> {
+  // Ascending id order + FOR NO KEY UPDATE: rating-only updates must not conflict with the KEY SHARE
+  // locks taken by foreign keys when inserting matches that reference these users (avoids a
+  // lock-upgrade deadlock between concurrent admin results sharing a player).
   const players = await c.query<{ id: number; rating: number }>(
-    `SELECT id, rating FROM users WHERE id IN ($1, $2) ORDER BY id FOR UPDATE`,
+    `SELECT id, rating FROM users WHERE id IN ($1, $2) ORDER BY id FOR NO KEY UPDATE`,
     [m.player_a_id, m.player_b_id]
   );
   const ra = players.rows.find((p) => p.id === m.player_a_id)!.rating;
