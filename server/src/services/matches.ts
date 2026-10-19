@@ -87,12 +87,15 @@ function parseGames(raw: unknown): PerspectiveGame[] {
   return raw.map((g) => ({ me: Number(g?.me), them: Number(g?.them) }));
 }
 
+/** Tolerance for client clocks running slightly ahead of the server. */
+export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
 function parsePlayedAt(raw: unknown): Date {
   if (raw === undefined || raw === null || raw === '') return new Date();
   const d = new Date(String(raw));
   if (isNaN(d.getTime())) throw badRequest('Invalid played_at date');
-  // Allow up to 14h ahead (the largest UTC offset) so "today" in any time zone, plus client clock skew, is accepted.
-  if (d.getTime() > Date.now() + 14 * 60 * 60 * 1000) throw badRequest('Match date cannot be in the future');
+  // The client sends the current instant for matches played today, so only allow a small clock-skew margin.
+  if (d.getTime() > Date.now() + MAX_CLOCK_SKEW_MS) throw badRequest('Match date cannot be in the future');
   return d;
 }
 
