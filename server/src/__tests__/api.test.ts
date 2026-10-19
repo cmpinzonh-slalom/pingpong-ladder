@@ -181,6 +181,12 @@ describe('matches', () => {
     await a.agent.post('/api/matches').send({ opponent_id: a.id, games: win }).expect(400);
     await a.agent.post('/api/matches').send({ opponent_id: 9999, games: win }).expect(404);
     await a.agent.post('/api/matches').send({ opponent_id: b.id, games: [{ me: 11, them: 10 }] }).expect(400);
+
+    const hours = (h: number) => new Date(Date.now() + h * 3600 * 1000).toISOString();
+    // A few hours ahead (client clock skew / time zone ahead of UTC) is still "today"
+    await a.agent.post('/api/matches').send({ opponent_id: b.id, games: win, played_at: hours(3) }).expect(201);
+    // Days ahead is rejected
+    await a.agent.post('/api/matches').send({ opponent_id: b.id, games: win, played_at: hours(48) }).expect(400);
   });
 
   it('lets either player withdraw a pending match', async () => {

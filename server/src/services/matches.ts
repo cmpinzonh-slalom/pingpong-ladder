@@ -91,7 +91,8 @@ function parsePlayedAt(raw: unknown): Date {
   if (raw === undefined || raw === null || raw === '') return new Date();
   const d = new Date(String(raw));
   if (isNaN(d.getTime())) throw badRequest('Invalid played_at date');
-  if (d.getTime() > Date.now() + 60 * 60 * 1000) throw badRequest('Match date cannot be in the future');
+  // Allow up to 14h ahead (the largest UTC offset) so "today" in any time zone, plus client clock skew, is accepted.
+  if (d.getTime() > Date.now() + 14 * 60 * 60 * 1000) throw badRequest('Match date cannot be in the future');
   return d;
 }
 
