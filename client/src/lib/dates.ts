@@ -1,4 +1,12 @@
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+
+dayjs.extend(relativeTime);
+
+/** "in 3 days", "in 5 hours" … */
+export function fromNow(date: string | Date): string {
+  return dayjs(date).fromNow();
+}
 
 /**
  * Converts a picked YYYY-MM-DD date into the timestamp sent to the server.

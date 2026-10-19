@@ -8,11 +8,12 @@ import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/
 import {
   AuthedRequest,
   clearSession,
-  isAdminEmail,
+  rolesOf,
   issueSession,
   requireAdmin,
   requireAuth,
   requireAuthAllowPasswordChange,
+  requireOwner,
 } from '../middleware/auth';
 
 const router = Router();
@@ -28,6 +29,7 @@ interface UserAuthRow {
   password_hash: string | null;
   must_change_password: boolean;
   session_version: number;
+  is_admin: boolean;
 }
 
 export function checkEmailAllowed(rawEmail: string): string {
@@ -70,7 +72,7 @@ function meResponse(u: UserAuthRow) {
     email: u.email,
     display_name: u.display_name,
     rating: u.rating,
-    is_admin: isAdminEmail(u.email),
+    ...rolesOf(u),
     must_change_password: u.must_change_password,
   };
 }
@@ -173,6 +175,7 @@ router.get('/admin/users', requireAuth, requireAdmin, async (_req, res) => {
       email: u.email,
       display_name: u.display_name,
       rating: u.rating,
+      ...rolesOf(u),
       has_password: !!u.password_hash,
       must_change_password: u.must_change_password,
       created_at: u.created_at,
@@ -185,15 +188,36 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireAdmin, async 
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) throw badRequest('Invalid user id');
   if (id === req.userId) throw badRequest('Use "Change password" to change your own password');
+  const target = await loadUser(id);
+  const targetRoles = rolesOf(target);
+  if (targetRoles.is_owner) throw forbidden("An owner's password can't be reset from the app");
+  // Prevents an admin from taking over another admin's account.
+  if (targetRoles.is_admin && !req.isOwner) throw forbidden("Only owners can reset another admin's password");
   const temp = generateTempPassword();
   const hash = await bcrypt.hash(temp, BCRYPT_ROUNDS);
+  // Re-check eligibility atomically: the target may have been promoted while we were hashing.
+  // Non-owners may only reset non-admins.
   const { rows } = await query<UserAuthRow>(
     `UPDATE users SET password_hash = $1, must_change_password = TRUE, session_version = session_version + 1
-     WHERE id = $2 RETURNING *`,
-    [hash, id]
+     WHERE id = $2 AND ($3 = TRUE OR is_admin = FALSE) RETURNING *`,
+    [hash, id, !!req.isOwner]
   );
-  if (rows.length === 0) throw notFound('User not found');
+  if (rows.length === 0) throw forbidden("Only owners can reset another admin's password");
   res.json({ email: rows[0].email, temporary_password: temp });
+});
+
+/** Owners grant or revoke the admin role. Owners themselves (ADMIN_EMAILS) can't be changed here. */
+router.post('/admin/users/:id/admin', requireAuth, requireOwner, async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) throw badRequest('Invalid user id');
+  if (typeof req.body?.admin !== 'boolean') throw badRequest('admin must be true or false');
+  const target = await loadUser(id);
+  if (rolesOf(target).is_owner) throw forbidden("Owners are configured in ADMIN_EMAILS and can't be changed here");
+  const { rows } = await query<UserAuthRow>(`UPDATE users SET is_admin = $1 WHERE id = $2 RETURNING *`, [
+    req.body.admin,
+    id,
+  ]);
+  res.json({ id: rows[0].id, email: rows[0].email, ...rolesOf(rows[0]) });
 });
 
 export default router;

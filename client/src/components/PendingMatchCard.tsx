@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -15,6 +16,7 @@ import {
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { api, gamesFor, opponentOf, type Match } from '../api/client';
+import { formatError, formatLabel } from '../lib/format';
 import { summarize } from '../lib/scores';
 import GameScoresInput, { fromGames, toGames, type GameDraft } from './GameScoresInput';
 
@@ -37,6 +39,27 @@ export default function PendingMatchCard({ match: m, userId, onChanged }: Props)
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<GameDraft[]>(fromGames(mine));
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  // Tournament matches must follow the round's format; regular matches accept any valid result.
+  const bestOf = m.tournament?.best_of;
+  const draftError = bestOf ? formatError(toGames(draft), bestOf) : null;
+  const draftValid = bestOf ? !draftError : summarize(toGames(draft)).ok;
+
+  const sendCorrection = async () => {
+    setBusy(true);
+    setDialogError(null);
+    try {
+      await api.counter(m.id, toGames(draft));
+      setEditing(false);
+      onChanged(`Correction sent to ${opp.name}`);
+    } catch (err) {
+      // Keep the dialog open and show the server's reason inside it.
+      setDialogError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const run = async (fn: () => Promise<unknown>, msg: string) => {
     setBusy(true);
@@ -66,6 +89,15 @@ export default function PendingMatchCard({ match: m, userId, onChanged }: Props)
             {dayjs(m.played_at).format('ddd, MMM D')}
           </Typography>
         </Box>
+        {m.tournament && (
+          <Chip
+            size="small"
+            color="secondary"
+            variant="outlined"
+            label={`${m.tournament.name} · ${m.tournament.round_name}`}
+            sx={{ mt: 0.5 }}
+          />
+        )}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {mine.map((g) => `${g.me}-${g.them}`).join(', ')}
         </Typography>
@@ -92,7 +124,14 @@ export default function PendingMatchCard({ match: m, userId, onChanged }: Props)
               >
                 Confirm
               </Button>
-              <Button variant="outlined" disabled={busy} onClick={() => setEditing(true)}>
+              <Button
+                variant="outlined"
+                disabled={busy}
+                onClick={() => {
+                  setDialogError(null);
+                  setEditing(true);
+                }}
+              >
                 Propose correction
               </Button>
             </>
@@ -115,16 +154,27 @@ export default function PendingMatchCard({ match: m, userId, onChanged }: Props)
         <DialogTitle>Correct the result vs {opp.name}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {bestOf ? `${formatLabel(bestOf)}. ` : ''}
             {opp.name} will be asked to confirm your version.
           </Typography>
-          <GameScoresInput value={draft} onChange={setDraft} opponentName={opp.name.split(' ')[0]} />
+          <GameScoresInput
+            value={draft}
+            onChange={setDraft}
+            opponentName={opp.name.split(' ')[0]}
+            extraError={draftError}
+          />
+          {dialogError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {dialogError}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditing(false)}>Cancel</Button>
           <Button
             variant="contained"
-            disabled={busy || !summarize(toGames(draft)).ok}
-            onClick={() => run(() => api.counter(m.id, toGames(draft)), `Correction sent to ${opp.name}`)}
+            disabled={busy || !draftValid}
+            onClick={sendCorrection}
           >
             Send correction
           </Button>

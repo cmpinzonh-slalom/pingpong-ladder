@@ -7,6 +7,9 @@ Track ping pong matches between Slalom colleagues with Elo ratings. Results only
 - Your opponent confirms, or proposes a correction (which you then confirm or correct, and so on). Either player can withdraw a pending match.
 - On confirmation, ratings update with Elo (start 1200, K = 32).
 - Leaderboard, player profiles with rating chart and match history, and head-to-head stats.
+- **Tournaments** (single elimination): admins create them with a sign-up deadline and format; players sign up;
+  after the deadline an admin draws a seeded bracket; players record results (both confirm) and the bracket advances.
+- **Roles**: owners (`ADMIN_EMAILS`) can make other users admins and revoke it; admins run tournaments and reset passwords.
 
 ## Stack
 
@@ -59,7 +62,7 @@ npm test                  # server + client
 | `SMTP_PASS`      | Gmail **App Password** (not your account password)                                       |
 | `EMAIL_FROM`     | e.g. `Ping Pong Ladder <you@gmail.com>`                                                  |
 | `ALLOWED_EMAILS` | Optional comma-separated sign-up allow-list (pilot). Empty = any `@slalom.com` address   |
-| `ADMIN_EMAILS`   | Comma-separated admins who can reset other users' passwords                              |
+| `ADMIN_EMAILS`   | Comma-separated **owners**: full admin rights plus granting/revoking admin to others     |
 
 ### Gmail App Password
 
@@ -83,12 +86,12 @@ delay or quarantine mail from a `gmail.com` sender.
 api/index.ts                 Vercel function entry (re-exports the Express app)
 server/src/app.ts            Express app (routes, error handling)
 server/src/routes/           auth, matches, users / leaderboard / h2h
-server/src/services/         match lifecycle (create, counter, confirm, withdraw)
-server/src/lib/              elo, score validation, mailer
+server/src/services/         match lifecycle, tournaments, bracket advancement
+server/src/lib/              elo, score validation, bracket draw, mailer
 server/src/db/               pg pool + init.sql
 server/scripts/              db:init, db:seed
 client/src/pages/            Login, ForcePasswordChange, SetupName, Dashboard, RecordMatch, Leaderboard,
-                             Profile, HeadToHead, Account, Admin
+                             Profile, HeadToHead, Account, Admin, Tournaments, TournamentForm, Tournament
 client/src/components/       Layout, GameScoresInput, PendingMatchCard, MatchRow, ChangePasswordForm
 ```
 
@@ -97,6 +100,34 @@ client/src/components/       Layout, GameScoresInput, PendingMatchCard, MatchRow
 - **Score validation:** each game is first to 11, win by 2 (12-10, 13-11 ... after deuce). A match is a single game, best of 3 or best of 5,
   and no games may be recorded after it's decided.
 - **Elo:** `E = 1 / (1 + 10^((Rb − Ra) / 400))`, `Δ = round(32 · (S − E))`, zero-sum. Applied in order of confirmation.
+## Tournaments
+
+- **Create (admin):** name, date, sign-up deadline, default format (single game / best of 3 / best of 5) with
+  optional overrides for the quarterfinals, semifinals and final, and an optional player cap.
+- **Sign-up:** any player until the deadline; players can withdraw before it, admins can remove players until the draw.
+- **Draw (admin, after the deadline):** bracket size is the next power of two. Seeds by current rating
+  (2 for ≤8 slots, 4 for 16, 8 for 32, 16 for 64+) are placed tennis-style: seeds 1 and 2 can only meet in the
+  final, the top 4 not before the semis, the top 8 not before the quarters (positions within each tier are random).
+  Byes go to the top seeds first (then the next-highest-rated players); everyone else is placed at random.
+  See `server/src/lib/bracket.ts`.
+- **Results:** a player records the result from the bracket; the opponent confirms or corrects it, as with regular
+  matches. Results must match the round's format. Confirmed tournament matches update ratings like any other match.
+- **Admin tools:** set a result directly (confirmed immediately) or award a walkover (no rating change). A decided
+  match can be overridden only while the next-round match hasn't started; the old result is voided and its rating
+  change reversed. Admins can also cancel a tournament (pending submissions are withdrawn).
+- The bracket page refreshes every 30 seconds and when you return to the tab.
+
+## Roles
+
+| Role   | Who                                | Can                                                                          |
+| ------ | ---------------------------------- | ---------------------------------------------------------------------------- |
+| Owner  | Emails in `ADMIN_EMAILS` (Vercel)  | Everything admins can, plus make/revoke admins. Can't be changed in the app. |
+| Admin  | Granted by an owner (Admin page)   | Create and run tournaments, set results, reset players' passwords            |
+| Player | Everyone else                      | Play, record and confirm matches, join tournaments                           |
+
+Admins can't reset an owner's or another admin's password (only owners can reset admins). Role changes take
+effect on the user's next request.
+
 ## Accounts and security
 
 - Sign-up requires an `@slalom.com` address (plus `ALLOWED_EMAILS` if set) and a password of 8+ characters.

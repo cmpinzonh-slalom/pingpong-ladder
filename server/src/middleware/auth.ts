@@ -8,7 +8,10 @@ export const SESSION_COOKIE = 'pp_session';
 
 export interface AuthedRequest extends Request {
   userId?: number;
+  /** Owner (ADMIN_EMAILS) or in-app admin. */
   isAdmin?: boolean;
+  /** Listed in ADMIN_EMAILS: can grant/revoke admin; cannot be changed from the app. */
+  isOwner?: boolean;
   mustChangePassword?: boolean;
 }
 
@@ -29,8 +32,13 @@ export function clearSession(res: Response): void {
   res.clearCookie(SESSION_COOKIE, { path: '/' });
 }
 
-export function isAdminEmail(email: string): boolean {
+export function isOwnerEmail(email: string): boolean {
   return config.adminEmails.includes(email.toLowerCase());
+}
+
+export function rolesOf(u: { email: string; is_admin: boolean }): { is_owner: boolean; is_admin: boolean } {
+  const owner = isOwnerEmail(u.email);
+  return { is_owner: owner, is_admin: owner || !!u.is_admin };
 }
 
 /**
@@ -48,8 +56,13 @@ function authenticate(allowPendingPasswordChange: boolean) {
       return next(unauthorized('Session expired, please sign in again'));
     }
     try {
-      const { rows } = await query<{ email: string; session_version: number; must_change_password: boolean }>(
-        `SELECT email, session_version, must_change_password FROM users WHERE id = $1`,
+      const { rows } = await query<{
+        email: string;
+        session_version: number;
+        must_change_password: boolean;
+        is_admin: boolean;
+      }>(
+        `SELECT email, session_version, must_change_password, is_admin FROM users WHERE id = $1`,
         [Number(payload.sub)]
       );
       const u = rows[0];
@@ -57,7 +70,9 @@ function authenticate(allowPendingPasswordChange: boolean) {
         return next(unauthorized('Session expired, please sign in again'));
       }
       req.userId = Number(payload.sub);
-      req.isAdmin = isAdminEmail(u.email);
+      const roles = rolesOf(u);
+      req.isAdmin = roles.is_admin;
+      req.isOwner = roles.is_owner;
       req.mustChangePassword = u.must_change_password;
       if (u.must_change_password && !allowPendingPasswordChange) {
         return next(forbidden('You must choose a new password before continuing'));
@@ -74,5 +89,10 @@ export const requireAuthAllowPasswordChange = authenticate(true);
 
 export function requireAdmin(req: AuthedRequest, _res: Response, next: NextFunction): void {
   if (!req.isAdmin) return next(forbidden('Admins only'));
+  next();
+}
+
+export function requireOwner(req: AuthedRequest, _res: Response, next: NextFunction): void {
+  if (!req.isOwner) return next(forbidden('Only owners can do this'));
   next();
 }
