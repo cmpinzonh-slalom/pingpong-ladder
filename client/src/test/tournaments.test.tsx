@@ -148,3 +148,57 @@ describe('TournamentFormPage', () => {
     expect(create).not.toHaveBeenCalled();
   });
 });
+
+describe('PendingMatchCard corrections for tournament matches', () => {
+  it('enforces the round format and shows server errors inside the dialog', async () => {
+    const { default: PendingMatchCard } = await import('../components/PendingMatchCard');
+    const { ApiError } = await import('../api/client');
+    const m = {
+      id: 7,
+      status: 'pending',
+      played_at: '2026-10-16T12:00:00Z',
+      created_at: '2026-10-16T12:00:00Z',
+      confirmed_at: null,
+      player_a: P(2, 'Bob Smith'),
+      player_b: P(1, 'Me'),
+      winner_id: 2,
+      submitted_by: 2,
+      awaiting_user_id: 1,
+      parent_match_id: null,
+      games: [
+        { a: 11, b: 7 },
+        { a: 11, b: 9 },
+      ],
+      rating_a_before: null,
+      rating_b_before: null,
+      rating_a_after: null,
+      rating_b_after: null,
+      tournament: { id: 3, name: 'Cup', round_name: 'Final', best_of: 3 },
+    } as Match;
+    const counter = vi.spyOn(api, 'counter').mockRejectedValue(new ApiError(409, 'This tournament was cancelled'));
+    const user = userEvent.setup();
+    render(<PendingMatchCard match={m} userId={1} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Propose correction' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/Best of 3/)).toBeInTheDocument();
+
+    // Reduce to a single game: valid as a regular match, but not for a best-of-3 round
+    await user.click(within(dialog).getByRole('button', { name: 'Remove game 2' }));
+    const send = within(dialog).getByRole('button', { name: 'Send correction' });
+    expect(send).toBeDisabled();
+    expect(within(dialog).getByText(/best of 3/)).toBeInTheDocument();
+
+    // Back to a valid best-of-3 result; a server rejection is shown inside the dialog
+    await user.click(within(dialog).getByRole('button', { name: /Add game/ }));
+    await user.type(within(dialog).getByLabelText('Game 2 my score'), '11');
+    await user.type(within(dialog).getByLabelText('Game 2 opponent score'), '5');
+    await user.click(within(dialog).getByRole('button', { name: /Add game/ }));
+    await user.type(within(dialog).getByLabelText('Game 3 my score'), '11');
+    await user.type(within(dialog).getByLabelText('Game 3 opponent score'), '8');
+    expect(send).toBeEnabled();
+    await user.click(send);
+    expect(counter).toHaveBeenCalled();
+    expect(await within(screen.getByRole('dialog')).findByText('This tournament was cancelled')).toBeInTheDocument();
+  });
+});

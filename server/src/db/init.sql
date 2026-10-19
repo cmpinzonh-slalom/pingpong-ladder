@@ -108,3 +108,17 @@ CREATE INDEX IF NOT EXISTS idx_tournament_matches_t ON tournament_matches(tourna
 -- Links a (pending/confirmed) result to its bracket slot. NULL for regular ladder matches.
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS tournament_match_id INTEGER;
 CREATE INDEX IF NOT EXISTS idx_matches_tournament_match ON matches(tournament_match_id);
+
+-- Rating changes that aren't a confirmed match, e.g. reversing a voided (overridden) tournament result.
+-- Together with confirmed matches these form each player's complete rating history.
+CREATE TABLE IF NOT EXISTS rating_adjustments (
+  id             SERIAL PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id),
+  rating_before  INTEGER NOT NULL,
+  rating_after   INTEGER NOT NULL,
+  reason         TEXT NOT NULL,
+  match_id       INTEGER REFERENCES matches(id),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rating_adjustments_user ON rating_adjustments(user_id);

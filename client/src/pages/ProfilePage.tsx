@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { api, opponentOf, type Match, type Profile } from '../api/client';
+import { api, opponentOf, type Match, type Profile, type RatingHistory } from '../api/client';
 import MatchRow from '../components/MatchRow';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -26,32 +26,33 @@ export default function ProfilePage() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [history, setHistory] = useState<Match[]>([]);
+  const [ratingHistory, setRatingHistory] = useState<RatingHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setError(null);
-    Promise.all([api.user(playerId), api.history(playerId)])
-      .then(([p, h]) => {
+    Promise.all([api.user(playerId), api.history(playerId), api.ratingHistory(playerId)])
+      .then(([p, h, rh]) => {
         setProfile(p);
         setHistory(h);
+        setRatingHistory(rh);
       })
       .catch((err) => setError(err.message));
   }, [playerId]);
 
+  // Built from every rating change (matches and adjustments such as overridden tournament results),
+  // so the chart always ends at the player's current rating.
   const chart = useMemo(() => {
-    const chrono = [...history].reverse();
-    if (chrono.length === 0) return [];
-    const first = chrono[0];
-    const start = first.player_a.id === playerId ? first.rating_a_before : first.rating_b_before;
+    if (!ratingHistory || ratingHistory.points.length === 0) return [];
     return [
-      { label: 'Start', rating: start },
-      ...chrono.map((m, i) => ({
-        label: `${i + 1}. ${dayjs(m.confirmed_at ?? m.played_at).format('MMM D')}`,
-        rating: m.player_a.id === playerId ? m.rating_a_after : m.rating_b_after,
-        vs: opponentOf(m, playerId).name,
+      { label: 'Start', rating: ratingHistory.start, detail: 'Starting rating' },
+      ...ratingHistory.points.map((pt, i) => ({
+        label: `${i + 1}. ${dayjs(pt.at).format('MMM D')}`,
+        rating: pt.rating,
+        detail: pt.label,
       })),
     ];
-  }, [history, playerId]);
+  }, [ratingHistory]);
 
   const opponents = useMemo(() => {
     const map = new Map<number, string>();
@@ -99,7 +100,9 @@ export default function ProfilePage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                   <YAxis domain={['dataMin - 20', 'dataMax + 20']} tick={{ fontSize: 12 }} />
-                  <Tooltip />
+                  <Tooltip
+                    formatter={(value, _name, item) => [value, (item?.payload as { detail?: string })?.detail ?? 'Rating']}
+                  />
                   <Line type="monotone" dataKey="rating" stroke="#0c62fb" strokeWidth={2} dot />
                 </LineChart>
               </ResponsiveContainer>

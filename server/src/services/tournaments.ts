@@ -444,6 +444,15 @@ export async function adminSetResult(adminId: number, tournamentId: number, tmId
       throw conflict(opened.t.status === 'cancelled' ? 'This tournament was cancelled' : 'The bracket has not been drawn yet');
     }
     if (tm.status === 'waiting') throw conflict('Both players must be known before setting a result');
+
+    // The admin's dialog may be stale (e.g. another admin overrode a feeder match and swapped a player).
+    // Require the participants they saw and compare under the bracket lock before changing anything.
+    if (body.expected_player1_id === undefined || body.expected_player2_id === undefined) {
+      throw badRequest('expected_player1_id and expected_player2_id are required');
+    }
+    if (Number(body.expected_player1_id) !== tm.player1_id || Number(body.expected_player2_id) !== tm.player2_id) {
+      throw conflict('The players in this match have changed. Refresh the bracket and try again.');
+    }
     if (tm.status === 'bye') throw conflict("Byes can't be changed");
 
     if (tm.status === 'completed' || tm.status === 'walkover') {
@@ -500,7 +509,14 @@ async function voidConfirmed(c: PoolClient, m: MatchRow): Promise<void> {
   changes.sort((x, y) => x[0] - y[0]);
   for (const [uid, delta] of changes) {
     const { rows } = await c.query<{ rating: number }>(`SELECT rating FROM users WHERE id = $1 FOR NO KEY UPDATE`, [uid]);
-    await c.query(`UPDATE users SET rating = $2 WHERE id = $1`, [uid, rows[0].rating - delta]);
+    const before = rows[0].rating;
+    const after = before - delta;
+    await c.query(`UPDATE users SET rating = $2 WHERE id = $1`, [uid, after]);
+    // Record the reversal so rating history (and the profile chart) stays consistent with the current rating.
+    await c.query(
+      `INSERT INTO rating_adjustments (user_id, rating_before, rating_after, reason, match_id) VALUES ($1, $2, $3, $4, $5)`,
+      [uid, before, after, 'Tournament result overridden', m.id]
+    );
   }
   await c.query(`UPDATE matches SET status = 'voided' WHERE id = $1`, [m.id]);
 }

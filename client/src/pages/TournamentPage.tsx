@@ -28,7 +28,7 @@ import PersonRemoveIcon from '@mui/icons-material/PersonRemoveOutlined';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
-import { api, type BracketMatch, type TournamentDetail } from '../api/client';
+import { api, ApiError, type BracketMatch, type TournamentDetail } from '../api/client';
 import Bracket from '../components/Bracket';
 import GameScoresInput, { emptyGames, toGames, type GameDraft } from '../components/GameScoresInput';
 import PendingMatchCard from '../components/PendingMatchCard';
@@ -140,16 +140,19 @@ export default function TournamentPage() {
     if (!adminFor) return;
     setDialogError(null);
     try {
+      const expected = { expected_player1_id: adminFor.player1!.id, expected_player2_id: adminFor.player2!.id };
       const body =
         adminTab === 'walkover'
-          ? { walkover: walkoverWinner! }
-          : { games: toGames(games).map((g) => ({ p1: g.me, p2: g.them })) };
+          ? { walkover: walkoverWinner!, ...expected }
+          : { games: toGames(games).map((g) => ({ p1: g.me, p2: g.them })), ...expected };
       setT(await api.adminTournamentResult(t.id, adminFor.id, body));
       setAdminFor(null);
       setFlash(adminTab === 'walkover' ? 'Walkover recorded' : 'Result recorded');
       refreshMe();
     } catch (err) {
       setDialogError((err as Error).message);
+      // The bracket moved on (e.g. another admin changed a feeder match): refresh what's on screen.
+      if (err instanceof ApiError && err.status === 409) load();
     }
   };
 

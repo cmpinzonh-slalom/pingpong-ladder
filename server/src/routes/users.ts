@@ -71,6 +71,79 @@ router.get('/users/:id/history', async (req, res) => {
   res.json(await confirmedMatchesFor(id));
 });
 
+/**
+ * Every rating change for a player in chronological order: confirmed matches plus adjustments
+ * (e.g. reversals of overridden tournament results). The last point always equals the current rating.
+ */
+router.get('/users/:id/rating-history', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) throw badRequest('Invalid id');
+  const user = await query<{ rating: number }>(`SELECT rating FROM users WHERE id = $1`, [id]);
+  if (user.rows.length === 0) throw notFound('Player not found');
+
+  const matches = await query<{
+    id: number;
+    confirmed_at: Date;
+    player_a_id: number;
+    player_b_id: number;
+    winner_id: number;
+    rating_a_before: number;
+    rating_b_before: number;
+    rating_a_after: number;
+    rating_b_after: number;
+  }>(
+    `SELECT id, confirmed_at, player_a_id, player_b_id, winner_id,
+            rating_a_before, rating_b_before, rating_a_after, rating_b_after
+     FROM matches WHERE status IN ('confirmed', 'voided') AND confirmed_at IS NOT NULL
+       AND (player_a_id = $1 OR player_b_id = $1)`,
+    [id]
+  );
+  const adjustments = await query<{ id: number; created_at: Date; rating_before: number; rating_after: number; reason: string }>(
+    `SELECT id, created_at, rating_before, rating_after, reason FROM rating_adjustments WHERE user_id = $1`,
+    [id]
+  );
+  const oppIds = [...new Set(matches.rows.map((m) => (m.player_a_id === id ? m.player_b_id : m.player_a_id)))];
+  const opps =
+    oppIds.length > 0
+      ? await query<{ id: number; display_name: string | null; email: string }>(
+          `SELECT id, display_name, email FROM users WHERE id IN (${oppIds.map((_, i) => `$${i + 1}`).join(',')})`,
+          oppIds
+        )
+      : { rows: [] as { id: number; display_name: string | null; email: string }[] };
+  const oppName = new Map(opps.rows.map((u) => [u.id, displayName(u)]));
+
+  // Voided matches stay in the history at the time they happened; their reversal appears as an adjustment later.
+  type Point = { at: Date; rating_before: number; rating: number; kind: 'match' | 'adjustment'; label: string };
+  const points: Point[] = [
+    ...matches.rows.map((m): Point => {
+      const isA = m.player_a_id === id;
+      const opp = isA ? m.player_b_id : m.player_a_id;
+      return {
+        at: new Date(m.confirmed_at),
+        rating_before: isA ? m.rating_a_before : m.rating_b_before,
+        rating: isA ? m.rating_a_after : m.rating_b_after,
+        kind: 'match',
+        label: `${m.winner_id === id ? 'Won' : 'Lost'} vs ${oppName.get(opp) ?? 'unknown'}`,
+      };
+    }),
+    ...adjustments.rows.map(
+      (a): Point => ({
+        at: new Date(a.created_at),
+        rating_before: a.rating_before,
+        rating: a.rating_after,
+        kind: 'adjustment',
+        label: a.reason,
+      })
+    ),
+  ].sort((x, y) => x.at.getTime() - y.at.getTime());
+
+  res.json({
+    current: user.rows[0].rating,
+    start: points.length > 0 ? points[0].rating_before : user.rows[0].rating,
+    points,
+  });
+});
+
 router.get('/matches/recent', async (_req, res) => {
   res.json(await recentConfirmed(20));
 });

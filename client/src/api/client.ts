@@ -54,7 +54,8 @@ export interface Match {
   rating_b_before: number | null;
   rating_a_after: number | null;
   rating_b_after: number | null;
-  tournament: { id: number; name: string; round_name: string } | null;
+  /** Set for tournament matches; best_of is the round's required format. */
+  tournament: { id: number; name: string; round_name: string; best_of: number } | null;
 }
 
 export interface GameInput {
@@ -130,6 +131,12 @@ export interface TournamentDetail extends TournamentSummary {
   rounds: BracketRound[];
 }
 
+export interface RatingHistory {
+  current: number;
+  start: number;
+  points: { at: string; rating_before: number; rating: number; kind: 'match' | 'adjustment'; label: string }[];
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -182,12 +189,17 @@ export const api = {
   adminTournamentResult: (
     id: number,
     tmId: number,
-    body: { games: { p1: number; p2: number }[] } | { walkover: number }
+    body: ({ games: { p1: number; p2: number }[] } | { walkover: number }) & {
+      /** Players the admin saw; the server rejects the change if the bracket has moved on. */
+      expected_player1_id: number;
+      expected_player2_id: number;
+    }
   ) => request<TournamentDetail>('POST', `/tournaments/${id}/matches/${tmId}/admin-result`, body),
 
   users: () => request<LeaderboardRow[]>('GET', '/users'),
   user: (id: number) => request<Profile>('GET', `/users/${id}`),
   history: (id: number) => request<Match[]>('GET', `/users/${id}/history`),
+  ratingHistory: (id: number) => request<RatingHistory>('GET', `/users/${id}/rating-history`),
   h2h: (a: number, b: number) => request<HeadToHead>('GET', `/h2h/${a}/${b}`),
   recent: () => request<Match[]>('GET', '/matches/recent'),
 

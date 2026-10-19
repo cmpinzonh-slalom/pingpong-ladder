@@ -4,7 +4,7 @@ import { query, Queryable, withTransaction } from '../db/database';
 import { applyElo } from '../lib/elo';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import { sendMail } from '../lib/mailer';
-import { roundName } from '../lib/bracket';
+import { bestOfForRound, roundName } from '../lib/bracket';
 import { GameScore, validateMatch } from '../lib/scores';
 import { assertInProgress, bestOfFor, lockBracket, recordBracketWinner } from './bracketDb';
 
@@ -61,12 +61,22 @@ export async function hydrate(rows: MatchRow[], db: Queryable = { query } as Que
   );
   const uMap = new Map(users.rows.map((u) => [u.id, u]));
 
-  // Tournament context for bracket matches (name + round label).
+  // Tournament context for bracket matches (name, round label and that round's format).
   const tmIds = [...new Set(rows.map((r) => r.tournament_match_id).filter((x): x is number => x != null))];
-  const tInfo = new Map<number, { id: number; name: string; round_name: string }>();
+  const tInfo = new Map<number, { id: number; name: string; round_name: string; best_of: number }>();
   if (tmIds.length > 0) {
-    const tms = await db.query<{ tm_id: number; t_id: number; name: string; round: number }>(
-      `SELECT tm.id AS tm_id, t.id AS t_id, t.name, tm.round
+    const tms = await db.query<{
+      tm_id: number;
+      t_id: number;
+      name: string;
+      round: number;
+      best_of: number;
+      quarters_best_of: number | null;
+      semis_best_of: number | null;
+      final_best_of: number | null;
+    }>(
+      `SELECT tm.id AS tm_id, t.id AS t_id, t.name, tm.round,
+              t.best_of, t.quarters_best_of, t.semis_best_of, t.final_best_of
        FROM tournament_matches tm JOIN tournaments t ON t.id = tm.tournament_id
        WHERE tm.id IN (${ph(tmIds)})`,
       tmIds
@@ -79,7 +89,13 @@ export async function hydrate(rows: MatchRow[], db: Queryable = { query } as Que
     );
     const roundsOf = new Map(maxRounds.rows.map((r) => [r.tournament_id, Number(r.rounds)]));
     for (const r of tms.rows) {
-      tInfo.set(r.tm_id, { id: r.t_id, name: r.name, round_name: roundName(r.round, roundsOf.get(r.t_id) ?? r.round) });
+      const rounds = roundsOf.get(r.t_id) ?? r.round;
+      tInfo.set(r.tm_id, {
+        id: r.t_id,
+        name: r.name,
+        round_name: roundName(r.round, rounds),
+        best_of: bestOfForRound(r, r.round, rounds),
+      });
     }
   }
   const player = (id: number) => {
