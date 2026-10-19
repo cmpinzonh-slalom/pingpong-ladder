@@ -1,11 +1,16 @@
+import bcrypt from 'bcryptjs';
 import { setPoolForTesting } from '../db/database';
 import { freshDb, signup } from './helpers';
+
+let sql: (q: string) => unknown[];
 
 beforeEach(() => {
   process.env.ALLOWED_EMAILS = '';
   process.env.ADMIN_EMAILS = 'owner@slalom.com';
-  freshDb();
+  sql = freshDb().sql;
 });
+
+afterEach(() => jest.restoreAllMocks());
 
 afterAll(() => {
   delete process.env.ADMIN_EMAILS;
@@ -63,5 +68,23 @@ describe('owner and admin roles', () => {
     await admin.agent.post(`/api/admin/users/${admin2.id}/reset-password`).expect(403);
     await admin.agent.post(`/api/admin/users/${p.id}/reset-password`).expect(200);
     await owner.agent.post(`/api/admin/users/${admin2.id}/reset-password`).expect(200);
+  });
+
+  it('re-checks reset eligibility atomically if the target is promoted mid-request', async () => {
+    const owner = await signup('owner@slalom.com', 'Owner');
+    const admin = await signup('admin@slalom.com', 'Admin');
+    const target = await signup('t@slalom.com', 'Target');
+    await owner.agent.post(`/api/admin/users/${admin.id}/admin`).send({ admin: true }).expect(200);
+
+    // Simulate an owner promoting the target while the reset is hashing the temporary password.
+    const realHash = bcrypt.hash.bind(bcrypt) as (s: string, r: number) => Promise<string>;
+    jest.spyOn(bcrypt, 'hash').mockImplementation((async (pw: string, rounds: number) => {
+      sql(`UPDATE users SET is_admin = TRUE WHERE id = ${target.id}`);
+      return realHash(pw, rounds);
+    }) as never);
+
+    await admin.agent.post(`/api/admin/users/${target.id}/reset-password`).expect(403);
+    // Target's password and session are untouched
+    await target.agent.get('/api/me').expect(200);
   });
 });

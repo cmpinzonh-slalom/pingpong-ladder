@@ -64,6 +64,13 @@ describe('Bracket', () => {
     expect(onAdmin).toHaveBeenCalledWith(rounds[0].matches[0]);
   });
 
+  it('hides all actions when read-only (cancelled tournament)', () => {
+    render(<Bracket rounds={rounds} userId={1} isAdmin readOnly onRecord={vi.fn()} onReview={vi.fn()} onAdmin={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Record result' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Admin/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Awaiting confirmation')).not.toBeInTheDocument();
+  });
+
   it('shows byes and walkovers', () => {
     const r: BracketRound[] = [
       {
@@ -118,5 +125,26 @@ describe('AdminPage roles', () => {
     expect(await screen.findByText('Pat')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /admin$/i })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Reset password' })).toHaveLength(1); // only Pat
+  });
+});
+
+describe('TournamentFormPage', () => {
+  it('blocks saving when a date is cleared', async () => {
+    const { default: TournamentFormPage } = await import('../pages/TournamentFormPage');
+    const { MemoryRouter } = await import('react-router-dom');
+    const create = vi.spyOn(api, 'createTournament');
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <TournamentFormPage />
+      </MemoryRouter>
+    );
+    await user.type(screen.getByLabelText('Name'), 'Winter Cup');
+    const save = screen.getByRole('button', { name: 'Create tournament' });
+    expect(save).toBeEnabled();
+    await user.clear(screen.getByLabelText('Sign-up deadline'));
+    expect(save).toBeDisabled();
+    expect(screen.getByText('Required')).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
   });
 });

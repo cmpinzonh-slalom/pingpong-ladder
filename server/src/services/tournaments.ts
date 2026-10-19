@@ -6,9 +6,11 @@ const pool = { query } as Queryable;
 import { bestOfForRound, drawBracket, roundName, totalRounds } from '../lib/bracket';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import {
+  assertInProgress,
   bestOfFor,
   getTournament,
   getTournamentMatch,
+  lockBracket,
   recordBracketWinner,
   reopenBracketMatch,
   TournamentMatchRow,
@@ -241,14 +243,17 @@ export async function createTournament(adminId: number, body: Record<string, unk
 }
 
 export async function updateTournament(adminId: number, id: number, body: Record<string, unknown>) {
-  const t = await getTournament(pool, id);
-  if (t.status !== 'signup') throw conflict('Tournaments can only be edited before the bracket is drawn');
-  const v = parseTournamentInput({ ...summary(t, 0, false), ...body });
-  await query(
-    `UPDATE tournaments SET name = $2, starts_on = $3, signup_deadline = $4, best_of = $5, quarters_best_of = $6,
-       semis_best_of = $7, final_best_of = $8, max_players = $9 WHERE id = $1`,
-    [id, v.name, v.starts_on, v.signup_deadline, v.best_of, v.quarters_best_of, v.semis_best_of, v.final_best_of, v.max_players]
-  );
+  // Read, validate and write under the same tournament lock used by draw/cancel.
+  await withTransaction(async (c) => {
+    const t = await getTournament(c, id, true);
+    if (t.status !== 'signup') throw conflict('Tournaments can only be edited before the bracket is drawn');
+    const v = parseTournamentInput({ ...summary(t, 0, false), ...body });
+    await c.query(
+      `UPDATE tournaments SET name = $2, starts_on = $3, signup_deadline = $4, best_of = $5, quarters_best_of = $6,
+         semis_best_of = $7, final_best_of = $8, max_players = $9 WHERE id = $1`,
+      [id, v.name, v.starts_on, v.signup_deadline, v.best_of, v.quarters_best_of, v.semis_best_of, v.final_best_of, v.max_players]
+    );
+  });
   return getTournamentDetail(id, adminId);
 }
 
@@ -377,18 +382,18 @@ export async function generateBracket(adminId: number, id: number, rng: () => nu
 
 // ───────────── Results ─────────────
 
+/** Locks tournament then bracket match (see LOCK ORDER in bracketDb) and checks they belong together. */
 async function openTournamentMatch(c: PoolClient, tournamentId: number, tmId: number) {
-  const tm = await getTournamentMatch(c, tmId, true);
+  const { t, tm } = await lockBracket(c, tmId);
   if (tm.tournament_id !== tournamentId) throw notFound('Match not found in this tournament');
-  const t = await getTournament(c, tournamentId);
-  if (t.status === 'cancelled') throw conflict('This tournament was cancelled');
-  return tm;
+  return { t, tm };
 }
 
 /** A player in a ready bracket match submits the result; the opponent confirms as usual. */
 export async function submitResult(userId: number, tournamentId: number, tmId: number, body: Record<string, unknown>) {
   const created = await withTransaction(async (c) => {
-    const tm = await openTournamentMatch(c, tournamentId, tmId);
+    const { t, tm } = await openTournamentMatch(c, tournamentId, tmId);
+    assertInProgress(t);
     if (tm.status !== 'ready') throw conflict('This match is not ready to be played');
     if (userId !== tm.player1_id && userId !== tm.player2_id) throw forbidden("You're not playing in this match");
     const pending = await c.query(`SELECT id FROM matches WHERE tournament_match_id = $1 AND status = 'pending'`, [tm.id]);
@@ -424,7 +429,12 @@ export async function submitResult(userId: number, tournamentId: number, tmId: n
  */
 export async function adminSetResult(adminId: number, tournamentId: number, tmId: number, body: Record<string, unknown>) {
   await withTransaction(async (c) => {
-    let tm = await openTournamentMatch(c, tournamentId, tmId);
+    const opened = await openTournamentMatch(c, tournamentId, tmId);
+    let tm = opened.tm;
+    // Admins may also fix results after completion (e.g. overriding the final), but not once cancelled.
+    if (opened.t.status !== 'in_progress' && opened.t.status !== 'completed') {
+      throw conflict(opened.t.status === 'cancelled' ? 'This tournament was cancelled' : 'The bracket has not been drawn yet');
+    }
     if (tm.status === 'waiting') throw conflict('Both players must be known before setting a result');
     if (tm.status === 'bye') throw conflict("Byes can't be changed");
 
@@ -472,10 +482,13 @@ export async function adminSetResult(adminId: number, tournamentId: number, tmId
 async function voidConfirmed(c: PoolClient, m: MatchRow): Promise<void> {
   const dA = (m.rating_a_after ?? 0) - (m.rating_a_before ?? 0);
   const dB = (m.rating_b_after ?? 0) - (m.rating_b_before ?? 0);
-  for (const [uid, delta] of [
+  // Lock players in ascending id order, matching applyConfirmation, to avoid deadlocks.
+  const changes: [number, number][] = [
     [m.player_a_id, dA],
     [m.player_b_id, dB],
-  ]) {
+  ];
+  changes.sort((x, y) => x[0] - y[0]);
+  for (const [uid, delta] of changes) {
     const { rows } = await c.query<{ rating: number }>(`SELECT rating FROM users WHERE id = $1 FOR UPDATE`, [uid]);
     await c.query(`UPDATE users SET rating = $2 WHERE id = $1`, [uid, rows[0].rating - delta]);
   }

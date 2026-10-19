@@ -11,6 +11,8 @@ interface Props {
   rounds: BracketRound[];
   userId: number;
   isAdmin: boolean;
+  /** Cancelled tournaments: show results only, no player or admin actions. */
+  readOnly?: boolean;
   onRecord: (m: BracketMatch) => void;
   onReview: (m: BracketMatch) => void;
   onAdmin: (m: BracketMatch) => void;
@@ -81,7 +83,7 @@ function PlayerLine({
   );
 }
 
-function MatchCard({ m, userId, isAdmin, onRecord, onReview, onAdmin }: { m: BracketMatch } & Omit<Props, 'rounds'>) {
+function MatchCard({ m, userId, isAdmin, readOnly = false, onRecord, onReview, onAdmin }: { m: BracketMatch } & Omit<Props, 'rounds'>) {
   const score = gameScore(m);
   const decided = m.winner_id !== null;
   const mine = m.player1?.id === userId || m.player2?.id === userId;
@@ -89,9 +91,11 @@ function MatchCard({ m, userId, isAdmin, onRecord, onReview, onAdmin }: { m: Bra
   const p1Score = score ? score[0] : walkover ? (m.winner_id === m.player1?.id ? 'W/O' : '') : null;
   const p2Score = score ? score[1] : walkover ? (m.winner_id === m.player2?.id ? 'W/O' : '') : null;
 
-  const showAdmin = isAdmin && (m.status === 'ready' || m.status === 'completed' || m.status === 'walkover');
+  const showAdmin = !readOnly && isAdmin && (m.status === 'ready' || m.status === 'completed' || m.status === 'walkover');
   let footer: ReactNode = null;
-  if (m.status === 'ready' && m.pending) {
+  if (readOnly) {
+    footer = null;
+  } else if (m.status === 'ready' && m.pending) {
     const awaitingMe = m.pending.awaiting_user_id === userId;
     footer = awaitingMe ? (
       <Button size="small" variant="contained" color="success" fullWidth onClick={() => onReview(m)}>

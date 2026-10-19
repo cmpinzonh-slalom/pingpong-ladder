@@ -195,12 +195,14 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireAdmin, async 
   if (targetRoles.is_admin && !req.isOwner) throw forbidden("Only owners can reset another admin's password");
   const temp = generateTempPassword();
   const hash = await bcrypt.hash(temp, BCRYPT_ROUNDS);
+  // Re-check eligibility atomically: the target may have been promoted while we were hashing.
+  // Non-owners may only reset non-admins.
   const { rows } = await query<UserAuthRow>(
     `UPDATE users SET password_hash = $1, must_change_password = TRUE, session_version = session_version + 1
-     WHERE id = $2 RETURNING *`,
-    [hash, id]
+     WHERE id = $2 AND ($3 = TRUE OR is_admin = FALSE) RETURNING *`,
+    [hash, id, !!req.isOwner]
   );
-  if (rows.length === 0) throw notFound('User not found');
+  if (rows.length === 0) throw forbidden("Only owners can reset another admin's password");
   res.json({ email: rows[0].email, temporary_password: temp });
 });
 

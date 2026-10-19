@@ -253,7 +253,8 @@ export default function TournamentPage() {
             <Bracket
               rounds={t.rounds}
               userId={me}
-              isAdmin={isAdmin && t.status !== 'cancelled'}
+              isAdmin={isAdmin}
+              readOnly={t.status === 'cancelled'}
               onRecord={openRecord}
               onReview={setReviewing}
               onAdmin={openAdmin}

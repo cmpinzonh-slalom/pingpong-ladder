@@ -6,7 +6,7 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import { sendMail } from '../lib/mailer';
 import { roundName } from '../lib/bracket';
 import { GameScore, validateMatch } from '../lib/scores';
-import { bestOfFor, getTournamentMatch, recordBracketWinner } from './bracketDb';
+import { assertInProgress, bestOfFor, lockBracket, recordBracketWinner } from './bracketDb';
 
 /** Game score from the caller's point of view. */
 export interface PerspectiveGame {
@@ -211,6 +211,14 @@ export async function createMatch(userId: number, body: Record<string, unknown>)
 
 export async function counterMatch(userId: number, matchId: number, body: Record<string, unknown>) {
   const created = await withTransaction(async (c) => {
+    // Tournament results: take tournament + bracket locks before the result lock (see bracketDb LOCK ORDER).
+    const tmId = (await getMatch(c, matchId)).tournament_match_id;
+    let bestOf: number | undefined;
+    if (tmId) {
+      const { t, tm } = await lockBracket(c, tmId);
+      assertInProgress(t);
+      bestOf = await bestOfFor(c, tm);
+    }
     const old = await getMatch(c, matchId, true);
     if (old.status !== 'pending') throw conflict('This match is no longer pending');
     if (old.awaiting_user_id !== userId) throw forbidden('This match is not waiting on you');
@@ -218,9 +226,6 @@ export async function counterMatch(userId: number, matchId: number, body: Record
     const isA = old.player_a_id === userId;
     const games = parseGames(body.games).map((g) => (isA ? { a: g.me, b: g.them } : { a: g.them, b: g.me }));
     const playedAt = body.played_at ? parsePlayedAt(body.played_at) : old.played_at;
-    const bestOf = old.tournament_match_id
-      ? await bestOfFor(c, await getTournamentMatch(c, old.tournament_match_id))
-      : undefined;
 
     // Insert (and validate) the new version first, then retire the old one.
     const created = await insertMatch(c, {
@@ -271,6 +276,9 @@ export async function applyConfirmation(c: PoolClient, m: MatchRow): Promise<Mat
 
 export async function confirmMatch(userId: number, matchId: number) {
   const confirmed = await withTransaction(async (c) => {
+    // Tournament results: take tournament + bracket locks before the result lock (see bracketDb LOCK ORDER).
+    const tmId = (await getMatch(c, matchId)).tournament_match_id;
+    if (tmId) assertInProgress((await lockBracket(c, tmId)).t);
     const m = await getMatch(c, matchId, true);
     if (m.status !== 'pending') throw conflict('This match is no longer pending');
     if (m.awaiting_user_id !== userId) throw forbidden('Only the opponent can confirm this result');

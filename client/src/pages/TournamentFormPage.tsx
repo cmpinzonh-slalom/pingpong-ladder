@@ -105,8 +105,16 @@ export default function TournamentFormPage() {
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  const startValid = /^\d{4}-\d{2}-\d{2}$/.test(form.starts_on) && dayjs(form.starts_on).isValid();
+  const deadlineValid = form.deadline !== '' && dayjs(form.deadline).isValid();
+  const canSubmit = !busy && form.name.trim().length >= 3 && startValid && deadlineValid;
+
   const submit = async () => {
     setError(null);
+    if (!startValid || !deadlineValid) {
+      setError('Enter both the tournament date and the sign-up deadline');
+      return;
+    }
     if (dayjs(form.deadline).isAfter(dayjs(form.starts_on).endOf('day'))) {
       setError('The sign-up deadline should be on or before the tournament date');
       return;
@@ -146,6 +154,8 @@ export default function TournamentFormPage() {
               label="Tournament date"
               value={form.starts_on}
               onChange={(e) => set('starts_on', e.target.value)}
+              error={!startValid}
+              helperText={!startValid ? 'Required' : undefined}
               sx={{ flex: 1, minWidth: 200 }}
               slotProps={{ inputLabel: { shrink: true } }}
             />
@@ -154,6 +164,8 @@ export default function TournamentFormPage() {
               label="Sign-up deadline"
               value={form.deadline}
               onChange={(e) => set('deadline', e.target.value)}
+              error={!deadlineValid}
+              helperText={!deadlineValid ? 'Required' : undefined}
               sx={{ flex: 1, minWidth: 200 }}
               slotProps={{ inputLabel: { shrink: true } }}
             />
@@ -181,7 +193,7 @@ export default function TournamentFormPage() {
 
           {error && <Alert severity="error">{error}</Alert>}
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button variant="contained" onClick={submit} disabled={busy || form.name.trim().length < 3}>
+            <Button variant="contained" onClick={submit} disabled={!canSubmit}>
               {editing ? 'Save changes' : 'Create tournament'}
             </Button>
             <Button onClick={() => navigate(-1)}>Cancel</Button>

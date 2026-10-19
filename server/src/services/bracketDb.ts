@@ -50,6 +50,31 @@ export async function getTournament(db: Queryable, id: number, lock = false): Pr
   return rows[0];
 }
 
+/**
+ * LOCK ORDER (all tournament code paths must follow it to avoid deadlocks and lost updates):
+ *   1. tournaments row   2. tournament_matches row   3. matches row(s)   4. users rows, ascending id
+ * Callers re-validate state after acquiring the locks.
+ */
+export async function lockBracket(
+  c: PoolClient,
+  tmId: number
+): Promise<{ t: TournamentRow; tm: TournamentMatchRow }> {
+  const { rows } = await c.query<{ tournament_id: number }>(
+    `SELECT tournament_id FROM tournament_matches WHERE id = $1`,
+    [tmId]
+  );
+  if (rows.length === 0) throw notFound('Tournament match not found');
+  const t = await getTournament(c, rows[0].tournament_id, true);
+  const tm = await getTournamentMatch(c, tmId, true);
+  return { t, tm };
+}
+
+/** Player-driven changes (submit, correct, confirm) are only allowed while the tournament is running. */
+export function assertInProgress(t: TournamentRow): void {
+  if (t.status === 'cancelled') throw conflict('This tournament was cancelled');
+  if (t.status !== 'in_progress') throw conflict('This tournament is not in progress');
+}
+
 export async function roundCount(db: Queryable, tournamentId: number): Promise<number> {
   const { rows } = await db.query<{ r: number | string | null }>(
     `SELECT MAX(round) AS r FROM tournament_matches WHERE tournament_id = $1`,

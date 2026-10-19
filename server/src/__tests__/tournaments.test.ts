@@ -250,11 +250,28 @@ describe('tournament play', () => {
     expect(hist).toHaveLength(0);
   });
 
-  it('cancelling withdraws pending submissions', async () => {
+  it('cancelling withdraws pending submissions and freezes the bracket', async () => {
     const { owner, a, b, id, tmId } = await twoPlayerFinal();
-    await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(201);
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(201)).body;
     await owner.agent.post(`/api/tournaments/${id}/cancel`).expect(200);
     expect((await b.agent.get('/api/matches/pending')).body.awaiting_me).toHaveLength(0);
+    await b.agent.post(`/api/matches/${m.id}/confirm`).expect(409);
     await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(409);
+    await owner.agent.post(`/api/tournaments/${id}/matches/${tmId}/admin-result`).send({ walkover: a.id }).expect(409);
+    expect((await a.agent.get(`/api/tournaments/${id}`)).body.status).toBe('cancelled');
+  });
+
+  it('rejects confirming or correcting a pending tournament result once the tournament is cancelled', async () => {
+    const { a, b, id, tmId } = await twoPlayerFinal();
+    const m = (await a.agent.post(`/api/tournaments/${id}/matches/${tmId}/result`).send({ games: win2 }).expect(201)).body;
+    // Flip the status directly (as if a cancel committed concurrently) to exercise the check under lock
+    sql(`UPDATE tournaments SET status = 'cancelled' WHERE id = ${id}`);
+    await b.agent.post(`/api/matches/${m.id}/confirm`).expect(409);
+    await b.agent.post(`/api/matches/${m.id}/counter`).send({ games: win2 }).expect(409);
+  });
+
+  it('cannot edit a tournament after the draw', async () => {
+    const { owner, id } = await twoPlayerFinal();
+    await owner.agent.patch(`/api/tournaments/${id}`).send({ best_of: 5 }).expect(409);
   });
 });
