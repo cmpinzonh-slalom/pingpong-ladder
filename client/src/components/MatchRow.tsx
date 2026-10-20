@@ -30,7 +30,7 @@ interface Props {
 
 /** One-line summary of a match. */
 export default function MatchRow({ match: m, viewerId, onVoided }: Props) {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const [confirmVoid, setConfirmVoid] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +51,9 @@ export default function MatchRow({ match: m, viewerId, onVoided }: Props) {
     try {
       await api.voidMatch(m.id);
       setConfirmVoid(false);
+      // If the admin played in this match, their own rating changed: refresh the signed-in user
+      // so the header matches the reloaded page (on every page that shows MatchRow).
+      if (user && (m.player_a.id === user.id || m.player_b.id === user.id)) await refresh();
       onVoided?.();
     } catch (err) {
       setError((err as Error).message);

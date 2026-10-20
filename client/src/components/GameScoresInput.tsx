@@ -47,6 +47,10 @@ export default function GameScoresInput({
     const next = value.map((g, j) => (j === i ? { ...g, [field]: v.replace(/[^0-9]/g, '') } : g));
     onChange(next);
   };
+  // Accessible names: "my"/"opponent" for the player's own result; the real names when someone else
+  // (an admin judging, or entering a tournament result) records it for two players.
+  const firstAria = thirdPerson ? myLabel : 'my';
+  const secondAria = thirdPerson ? opponentName : 'opponent';
   const summary = summarize(toGames(value));
   const allFilled = value.every((g) => g.me !== '' && g.them !== '');
 
@@ -68,7 +72,7 @@ export default function GameScoresInput({
             label={myLabel}
             value={g.me}
             onChange={(e) => set(i, 'me', e.target.value)}
-            slotProps={{ htmlInput: { ...numeric, 'aria-label': `Game ${i + 1} my score` } }}
+            slotProps={{ htmlInput: { ...numeric, 'aria-label': `Game ${i + 1} ${firstAria} score` } }}
             sx={{ width: { xs: 'auto', sm: 90 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}
           />
           <Typography>–</Typography>
@@ -77,7 +81,7 @@ export default function GameScoresInput({
             label={opponentName}
             value={g.them}
             onChange={(e) => set(i, 'them', e.target.value)}
-            slotProps={{ htmlInput: { ...numeric, 'aria-label': `Game ${i + 1} opponent score` } }}
+            slotProps={{ htmlInput: { ...numeric, 'aria-label': `Game ${i + 1} ${secondAria} score` } }}
             sx={{ width: { xs: 'auto', sm: 90 }, flex: { xs: 1, sm: 'none' }, minWidth: 0 }}
           />
           <IconButton

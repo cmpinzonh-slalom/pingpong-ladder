@@ -7,7 +7,8 @@ import MatchRow from '../components/MatchRow';
 import RecordMatchPage from '../pages/RecordMatchPage';
 
 const authUser = { current: { id: 1, email: 'ada@slalom.com', display_name: 'Ada', rating: 1200, is_admin: true, is_owner: false } };
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ user: authUser.current }) }));
+const refresh = vi.fn();
+vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ user: authUser.current, refresh }) }));
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -54,8 +55,10 @@ describe('RecordMatchPage judge mode', () => {
     await user.click(within(list2).getByText('Bob Jones (1200)'));
 
     // Score columns are labelled with the players; Bob wins this single game
-    await user.type(screen.getByLabelText('Game 1 my score'), '7');
-    await user.type(screen.getByLabelText('Game 1 opponent score'), '11');
+    // Accessible names use the selected players, not "my"/"opponent"
+    expect(screen.queryByLabelText('Game 1 my score')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Game 1 Alice score'), '7');
+    await user.type(screen.getByLabelText('Game 1 Bob score'), '11');
     expect(screen.getByText('Bob wins 1–0')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Record result \(no confirmation needed\)/ }));
@@ -105,6 +108,23 @@ describe('MatchRow judged matches', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Void result' }));
     expect(voidMatch).toHaveBeenCalledWith(50);
     expect(onVoided).toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled(); // the admin didn't play in this match
+  });
+
+  it("refreshes the signed-in user's rating when voiding a match they played in", async () => {
+    refresh.mockClear();
+    vi.spyOn(api, 'voidMatch').mockResolvedValue(judgedMatch({ status: 'voided' }));
+    const user = userEvent.setup();
+    // Admin Ada (id 1) played; another admin judged it
+    const m = judgedMatch({ player_a: { id: 1, name: 'Ada', rating: 1216 }, judged_by: { id: 9, name: 'Other Admin' } });
+    render(
+      <MemoryRouter>
+        <MatchRow match={m} onVoided={vi.fn()} />
+      </MemoryRouter>
+    );
+    await user.click(screen.getByRole('button', { name: 'Void judged result' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Void result' }));
+    expect(refresh).toHaveBeenCalled();
   });
 
   it('hides Void for non-admins and for regular matches', () => {
