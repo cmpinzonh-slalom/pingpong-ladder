@@ -81,6 +81,28 @@ describe('judge mode', () => {
     expect((await a.agent.get('/api/me')).body.rating).toBe(1200);
   });
 
+  it('rejects malformed scores without recording a match or changing ratings', async () => {
+    const { admin, a, b } = await setup();
+    for (const games of [
+      [{ a: 11, b: null }],
+      [{ a: 11, b: false }],
+      [{ a: 11, b: '' }],
+      [{ a: 11, b: [] }],
+      [{ a: 11 }],
+      [null],
+      [{ a: '11', b: '3x' }],
+    ]) {
+      await admin.agent.post('/api/matches/judge').send({ player_a_id: a.id, player_b_id: b.id, games }).expect(400);
+    }
+    // Same protection for regular submissions
+    await a.agent.post('/api/matches').send({ opponent_id: b.id, games: [{ me: 11, them: null }] }).expect(400);
+
+    expect((await a.agent.get('/api/me')).body.rating).toBe(1200);
+    expect((await b.agent.get('/api/me')).body.rating).toBe(1200);
+    expect((await a.agent.get(`/api/users/${a.id}/history`)).body).toHaveLength(0);
+    expect((await a.agent.get('/api/matches/pending')).body.awaiting_them).toHaveLength(0);
+  });
+
   it('lets admins void a judged match, reversing ratings and keeping history consistent', async () => {
     const { owner, admin, a, b } = await setup();
     const judged = (

@@ -5,6 +5,7 @@ import { query, Queryable, withTransaction } from '../db/database';
 const pool = { query } as Queryable;
 import { bestOfForRound, drawBracket, roundName, totalRounds } from '../lib/bracket';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
+import { parseGamePairs } from '../lib/scores';
 import {
   assertInProgress,
   bestOfFor,
@@ -485,7 +486,7 @@ export async function adminSetResult(adminId: number, tournamentId: number, tmId
 
     // Games are given from player 1's perspective: [{ p1, p2 }, ...]
     if (!Array.isArray(body.games)) throw badRequest('Provide games or walkover');
-    const games = (body.games as { p1?: unknown; p2?: unknown }[]).map((g) => ({ a: Number(g?.p1), b: Number(g?.p2) }));
+    const games = parseGamePairs(body.games, 'p1', 'p2').map((g) => ({ a: g.s1, b: g.s2 }));
     const m = await insertMatch(c, {
       playerA: tm.player1_id!,
       playerB: tm.player2_id!,

@@ -5,7 +5,7 @@ import { applyElo } from '../lib/elo';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import { sendMail } from '../lib/mailer';
 import { bestOfForRound, roundName } from '../lib/bracket';
-import { GameScore, validateMatch } from '../lib/scores';
+import { GameScore, parseGamePairs, validateMatch } from '../lib/scores';
 import { assertInProgress, bestOfFor, lockBracket, recordBracketWinner } from './bracketDb';
 
 /** Game score from the caller's point of view. */
@@ -130,7 +130,7 @@ export async function hydrate(rows: MatchRow[], db: Queryable = { query } as Que
 
 export function parseGames(raw: unknown): PerspectiveGame[] {
   if (!Array.isArray(raw)) throw badRequest('games must be an array');
-  return raw.map((g) => ({ me: Number(g?.me), them: Number(g?.them) }));
+  return parseGamePairs(raw, 'me', 'them').map((g) => ({ me: g.s1, them: g.s2 }));
 }
 
 /** Tolerance for client clocks running slightly ahead of the server. */
@@ -365,7 +365,7 @@ export async function judgeMatch(adminId: number, body: Record<string, unknown>)
     throw forbidden("You can't judge a match you played in. Record it normally so your opponent confirms it.");
   }
   if (!Array.isArray(body.games)) throw badRequest('games must be an array');
-  const games = (body.games as { a?: unknown; b?: unknown }[]).map((g) => ({ a: Number(g?.a), b: Number(g?.b) }));
+  const games = parseGamePairs(body.games, 'a', 'b').map((g) => ({ a: g.s1, b: g.s2 }));
   const playedAt = parsePlayedAt(body.played_at);
 
   const confirmed = await withTransaction(async (c) => {
