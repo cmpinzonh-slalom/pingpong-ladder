@@ -174,6 +174,7 @@ describe('PendingMatchCard corrections for tournament matches', () => {
       rating_a_after: null,
       rating_b_after: null,
       tournament: { id: 3, name: 'Cup', round_name: 'Final', best_of: 3 },
+      judged_by: null,
     } as Match;
     const counter = vi.spyOn(api, 'counter').mockRejectedValue(new ApiError(409, 'This tournament was cancelled'));
     const user = userEvent.setup();

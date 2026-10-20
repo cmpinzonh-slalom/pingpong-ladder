@@ -84,7 +84,7 @@ export default function DashboardPage() {
           {recent.map((m, i) => (
             <Box key={m.id}>
               {i > 0 && <Divider />}
-              <MatchRow match={m} viewerId={user!.id} />
+              <MatchRow match={m} viewerId={user!.id} onVoided={() => onChanged('Judged result voided')} />
             </Box>
           ))}
         </CardContent>

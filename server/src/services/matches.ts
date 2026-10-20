@@ -31,6 +31,7 @@ export interface MatchRow {
   rating_a_after: number | null;
   rating_b_after: number | null;
   tournament_match_id: number | null;
+  judged_by: number | null;
 }
 
 interface UserLite {
@@ -48,7 +49,9 @@ export function displayName(u: { display_name: string | null; email: string }): 
 export async function hydrate(rows: MatchRow[], db: Queryable = { query } as Queryable) {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const userIds = [...new Set(rows.flatMap((r) => [r.player_a_id, r.player_b_id]))];
+  const userIds = [
+    ...new Set(rows.flatMap((r) => [r.player_a_id, r.player_b_id, ...(r.judged_by ? [r.judged_by] : [])])),
+  ];
   const ph = (arr: unknown[]) => arr.map((_, i) => `$${i + 1}`).join(',');
 
   const games = await db.query<{ match_id: number; game_no: number; score_a: number; score_b: number }>(
@@ -121,6 +124,7 @@ export async function hydrate(rows: MatchRow[], db: Queryable = { query } as Que
     rating_a_after: r.rating_a_after,
     rating_b_after: r.rating_b_after,
     tournament: r.tournament_match_id != null ? tInfo.get(r.tournament_match_id) ?? null : null,
+    judged_by: r.judged_by ? { id: r.judged_by, name: player(r.judged_by).name } : null,
   }));
 }
 
@@ -162,6 +166,8 @@ export async function insertMatch(
     tournamentMatchId?: number | null;
     /** Required format for tournament matches. */
     bestOf?: number;
+    /** Admin who recorded the match in judge mode. */
+    judgedBy?: number | null;
   }
 ): Promise<MatchRow> {
   const v = validateMatch(opts.games, opts.bestOf);
@@ -171,9 +177,19 @@ export async function insertMatch(
   const awaiting = opts.submittedBy === opts.playerA ? opts.playerB : opts.playerA;
 
   const { rows } = await client.query<MatchRow>(
-    `INSERT INTO matches (player_a_id, player_b_id, submitted_by, awaiting_user_id, winner_id, status, parent_match_id, played_at, tournament_match_id)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8) RETURNING *`,
-    [opts.playerA, opts.playerB, opts.submittedBy, awaiting, winner, opts.parentId, opts.playedAt, opts.tournamentMatchId ?? null]
+    `INSERT INTO matches (player_a_id, player_b_id, submitted_by, awaiting_user_id, winner_id, status, parent_match_id, played_at, tournament_match_id, judged_by)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9) RETURNING *`,
+    [
+      opts.playerA,
+      opts.playerB,
+      opts.submittedBy,
+      awaiting,
+      winner,
+      opts.parentId,
+      opts.playedAt,
+      opts.tournamentMatchId ?? null,
+      opts.judgedBy ?? null,
+    ]
   );
   const m = rows[0];
   for (let i = 0; i < opts.games.length; i++) {
@@ -308,6 +324,83 @@ export async function confirmMatch(userId: number, matchId: number) {
 }
 
 export { getMatch, parsePlayedAt };
+
+/**
+ * Marks a confirmed match void and reverses its rating change for both players, recording each
+ * reversal in rating_adjustments so rating history stays consistent with current ratings.
+ * Locks players in ascending id order with FOR NO KEY UPDATE, like applyConfirmation.
+ */
+export async function voidConfirmed(c: PoolClient, m: MatchRow, reason: string): Promise<void> {
+  const dA = (m.rating_a_after ?? 0) - (m.rating_a_before ?? 0);
+  const dB = (m.rating_b_after ?? 0) - (m.rating_b_before ?? 0);
+  const changes: [number, number][] = [
+    [m.player_a_id, dA],
+    [m.player_b_id, dB],
+  ];
+  changes.sort((x, y) => x[0] - y[0]);
+  for (const [uid, delta] of changes) {
+    const { rows } = await c.query<{ rating: number }>(`SELECT rating FROM users WHERE id = $1 FOR NO KEY UPDATE`, [uid]);
+    const before = rows[0].rating;
+    const after = before - delta;
+    await c.query(`UPDATE users SET rating = $2 WHERE id = $1`, [uid, after]);
+    await c.query(
+      `INSERT INTO rating_adjustments (user_id, rating_before, rating_after, reason, match_id, rating_seq)
+       VALUES ($1, $2, $3, $4, $5, nextval('rating_event_seq'))`,
+      [uid, before, after, reason, m.id]
+    );
+  }
+  await c.query(`UPDATE matches SET status = 'voided' WHERE id = $1`, [m.id]);
+}
+
+/**
+ * Judge mode: an admin records a regular match between two other players. It is confirmed
+ * immediately (ratings update, no approval). Games are given from player A's perspective.
+ */
+export async function judgeMatch(adminId: number, body: Record<string, unknown>) {
+  const a = Number(body.player_a_id);
+  const b = Number(body.player_b_id);
+  if (!Number.isInteger(a) || !Number.isInteger(b)) throw badRequest('player_a_id and player_b_id are required');
+  if (a === b) throw badRequest('Pick two different players');
+  if (a === adminId || b === adminId) {
+    throw forbidden("You can't judge a match you played in. Record it normally so your opponent confirms it.");
+  }
+  if (!Array.isArray(body.games)) throw badRequest('games must be an array');
+  const games = (body.games as { a?: unknown; b?: unknown }[]).map((g) => ({ a: Number(g?.a), b: Number(g?.b) }));
+  const playedAt = parsePlayedAt(body.played_at);
+
+  const confirmed = await withTransaction(async (c) => {
+    const found = await c.query<{ id: number }>(`SELECT id FROM users WHERE id IN ($1, $2)`, [a, b]);
+    if (found.rows.length !== 2) throw notFound('Player not found');
+    const m = await insertMatch(c, {
+      playerA: a,
+      playerB: b,
+      submittedBy: adminId,
+      games,
+      playedAt,
+      parentId: null,
+      judgedBy: adminId,
+    });
+    return applyConfirmation(c, m);
+  });
+  for (const p of [a, b]) {
+    await notify(p, adminId, '{from} recorded one of your matches', '{from} recorded a match result for you as judge:');
+  }
+  return (await hydrate([confirmed]))[0];
+}
+
+/** Admins void a judged (non-tournament) match: ratings are reversed and the reversal recorded in history. */
+export async function voidJudgedMatch(adminId: number, matchId: number) {
+  const voided = await withTransaction(async (c) => {
+    const m = await getMatch(c, matchId, true);
+    if (m.tournament_match_id) throw conflict('Tournament results are changed from the tournament bracket');
+    if (!m.judged_by) throw conflict('Only judged matches can be voided');
+    if (m.status !== 'confirmed') throw conflict('This match is not confirmed (it may already be voided)');
+    const admin = await c.query<UserLite>(`SELECT id, display_name, email, rating FROM users WHERE id = $1`, [adminId]);
+    await voidConfirmed(c, m, `Judged result voided by ${displayName(admin.rows[0])}`);
+    return getMatch(c, matchId);
+  });
+  return (await hydrate([voided]))[0];
+}
 
 export async function withdrawMatch(userId: number, matchId: number) {
   const m = await getMatch({ query } as Queryable, matchId);

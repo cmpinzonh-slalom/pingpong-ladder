@@ -39,7 +39,7 @@ export interface Profile extends LeaderboardRow {
 
 export interface Match {
   id: number;
-  status: 'pending' | 'confirmed' | 'superseded' | 'withdrawn';
+  status: 'pending' | 'confirmed' | 'superseded' | 'withdrawn' | 'voided';
   played_at: string;
   created_at: string;
   confirmed_at: string | null;
@@ -56,6 +56,8 @@ export interface Match {
   rating_b_after: number | null;
   /** Set for tournament matches; best_of is the round's required format. */
   tournament: { id: number; name: string; round_name: string; best_of: number } | null;
+  /** Set when an admin recorded the match in judge mode. */
+  judged_by: { id: number; name: string } | null;
 }
 
 export interface GameInput {
@@ -211,6 +213,10 @@ export const api = {
   pending: () => request<{ awaiting_me: Match[]; awaiting_them: Match[] }>('GET', '/matches/pending'),
   createMatch: (opponent_id: number, games: GameInput[], played_at?: string) =>
     request<Match>('POST', '/matches', { opponent_id, games, played_at }),
+  /** Judge mode (admins): games from player A's perspective; confirmed immediately. */
+  judgeMatch: (player_a_id: number, player_b_id: number, games: { a: number; b: number }[], played_at?: string) =>
+    request<Match>('POST', '/matches/judge', { player_a_id, player_b_id, games, played_at }),
+  voidMatch: (id: number) => request<Match>('POST', `/matches/${id}/void`),
   confirm: (id: number) => request<Match>('POST', `/matches/${id}/confirm`),
   counter: (id: number, games: GameInput[]) => request<Match>('POST', `/matches/${id}/counter`, { games }),
   withdraw: (id: number) => request<Match>('POST', `/matches/${id}/withdraw`),

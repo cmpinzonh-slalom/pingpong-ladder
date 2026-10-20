@@ -28,6 +28,7 @@ export default function ProfilePage() {
   const [history, setHistory] = useState<Match[]>([]);
   const [ratingHistory, setRatingHistory] = useState<RatingHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0); // bumped after an admin voids a judged match
 
   useEffect(() => {
     setError(null);
@@ -38,7 +39,7 @@ export default function ProfilePage() {
         setRatingHistory(rh);
       })
       .catch((err) => setError(err.message));
-  }, [playerId]);
+  }, [playerId, reloadKey]);
 
   // Built from every rating change (matches and adjustments such as overridden tournament results),
   // so the chart always ends at the player's current rating.
@@ -137,7 +138,7 @@ export default function ProfilePage() {
           {history.map((m, i) => (
             <Box key={m.id}>
               {i > 0 && <Divider />}
-              <MatchRow match={m} viewerId={playerId} />
+              <MatchRow match={m} viewerId={playerId} onVoided={() => setReloadKey((k) => k + 1)} />
             </Box>
           ))}
         </CardContent>

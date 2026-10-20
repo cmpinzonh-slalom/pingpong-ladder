@@ -27,6 +27,7 @@ export default function HeadToHeadPage() {
   const { a, b } = useParams();
   const [data, setData] = useState<HeadToHead | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0); // bumped after an admin voids a judged match
 
   useEffect(() => {
     setError(null);
@@ -34,7 +35,7 @@ export default function HeadToHeadPage() {
       .h2h(Number(a), Number(b))
       .then(setData)
       .catch((err) => setError(err.message));
-  }, [a, b]);
+  }, [a, b, reloadKey]);
 
   if (error) return <Typography color="error">{error}</Typography>;
   if (!data) return null;
@@ -85,7 +86,7 @@ export default function HeadToHeadPage() {
             {data.matches.map((m, i) => (
               <Box key={m.id}>
                 {i > 0 && <Divider />}
-                <MatchRow match={m} viewerId={data.a.id} />
+                <MatchRow match={m} viewerId={data.a.id} onVoided={() => setReloadKey((k) => k + 1)} />
               </Box>
             ))}
           </CardContent>

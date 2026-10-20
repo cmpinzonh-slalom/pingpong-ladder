@@ -31,6 +31,7 @@ const baseMatch: Match = {
   rating_a_after: null,
   rating_b_after: null,
   tournament: null,
+  judged_by: null,
 };
 
 afterEach(() => vi.restoreAllMocks());
