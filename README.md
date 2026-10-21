@@ -10,6 +10,7 @@ Track ping pong matches between Slalom colleagues with Elo ratings. Results only
 - **Tournaments** (single elimination): admins create them with a sign-up deadline and format; players sign up;
   after the deadline an admin draws a seeded bracket; players record results (both confirm) and the bracket advances.
 - **Roles**: owners (`ADMIN_EMAILS`) can make other users admins and revoke it; admins run tournaments and reset passwords.
+- **Judge mode** (admins): record a match between two other players that counts immediately, without confirmation.
 
 ## Stack
 
@@ -117,12 +118,22 @@ client/src/components/       Layout, GameScoresInput, PendingMatchCard, MatchRow
   change reversed. Admins can also cancel a tournament (pending submissions are withdrawn).
 - The bracket page refreshes every 30 seconds and when you return to the tab.
 
+## Judge mode
+
+Admins can turn on **Judge mode** on the Record match page to enter a result for two other players
+(`POST /api/matches/judge`). The match is confirmed immediately and ratings update right away; it is marked
+"Judged by <admin>" in history, recent matches and head-to-head. Admins can't judge matches they played in.
+
+A mistaken judged result can be **voided** by any admin (`POST /api/matches/:id/void`, the ⊘ action on the
+match). Both players' rating changes are reversed and the reversal is recorded in their rating history.
+Tournament results are not judged here; they use the bracket's admin tools.
+
 ## Roles
 
 | Role   | Who                                | Can                                                                          |
 | ------ | ---------------------------------- | ---------------------------------------------------------------------------- |
 | Owner  | Emails in `ADMIN_EMAILS` (Vercel)  | Everything admins can, plus make/revoke admins. Can't be changed in the app. |
-| Admin  | Granted by an owner (Admin page)   | Create and run tournaments, set results, reset players' passwords            |
+| Admin  | Granted by an owner (Admin page)   | Run tournaments, judge/void matches, reset players' passwords                |
 | Player | Everyone else                      | Play, record and confirm matches, join tournaments                           |
 
 Admins can't reset an owner's or another admin's password (only owners can reset admins). Role changes take

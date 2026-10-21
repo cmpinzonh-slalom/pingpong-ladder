@@ -1,5 +1,5 @@
 import { applyElo, expectedScore } from '../lib/elo';
-import { validateGame, validateMatch } from '../lib/scores';
+import { parseGamePairs, parseScore, validateGame, validateMatch } from '../lib/scores';
 
 describe('elo', () => {
   it('gives 50% expectation for equal ratings', () => {
@@ -61,5 +61,22 @@ describe('score validation', () => {
     expect(validateMatch([{ a: 11, b: 5 }, { a: 5, b: 11 }]).ok).toBe(false);
     // Decided 2-0 but a third game recorded
     expect(validateMatch([{ a: 11, b: 5 }, { a: 11, b: 5 }, { a: 5, b: 11 }]).ok).toBe(false);
+  });
+});
+
+describe('parseScore', () => {
+  it('accepts only non-negative integers', () => {
+    expect(parseScore(11)).toBe(11);
+    expect(parseScore(0)).toBe(0);
+    expect(parseScore('11')).toBe(11);
+    for (const bad of [null, undefined, false, true, '', ' ', [], {}, '11a', '1e1', -1, 11.5, NaN, Infinity, '-3']) {
+      expect(parseScore(bad)).toBeNaN();
+    }
+  });
+
+  it('makes malformed games fail validation instead of becoming zeros', () => {
+    const games = parseGamePairs([{ a: 11, b: null }], 'a', 'b').map((g) => ({ a: g.s1, b: g.s2 }));
+    expect(validateMatch(games).ok).toBe(false);
+    expect(parseGamePairs([null, 5], 'a', 'b').every((g) => Number.isNaN(g.s1) && Number.isNaN(g.s2))).toBe(true);
   });
 });

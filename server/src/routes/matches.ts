@@ -1,7 +1,15 @@
 import { Router } from 'express';
 import { badRequest } from '../lib/errors';
-import { AuthedRequest, requireAuth } from '../middleware/auth';
-import { confirmMatch, counterMatch, createMatch, pendingFor, withdrawMatch } from '../services/matches';
+import { AuthedRequest, requireAdmin, requireAuth } from '../middleware/auth';
+import {
+  confirmMatch,
+  counterMatch,
+  createMatch,
+  judgeMatch,
+  pendingFor,
+  voidJudgedMatch,
+  withdrawMatch,
+} from '../services/matches';
 
 const router = Router();
 router.use('/matches', requireAuth);
@@ -14,6 +22,15 @@ const idParam = (raw: unknown) => {
 
 router.post('/matches', async (req: AuthedRequest, res) => {
   res.status(201).json(await createMatch(req.userId!, req.body ?? {}));
+});
+
+// Judge mode (admins): record a match between two other players, confirmed immediately.
+router.post('/matches/judge', requireAdmin, async (req: AuthedRequest, res) => {
+  res.status(201).json(await judgeMatch(req.userId!, req.body ?? {}));
+});
+
+router.post('/matches/:id/void', requireAdmin, async (req: AuthedRequest, res) => {
+  res.json(await voidJudgedMatch(req.userId!, idParam(req.params.id)));
 });
 
 router.get('/matches/pending', async (req: AuthedRequest, res) => {

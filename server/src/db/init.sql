@@ -128,3 +128,6 @@ CREATE INDEX IF NOT EXISTS idx_rating_adjustments_user ON rating_adjustments(use
 CREATE SEQUENCE IF NOT EXISTS rating_event_seq;
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS rating_seq BIGINT;
 ALTER TABLE rating_adjustments ADD COLUMN IF NOT EXISTS rating_seq BIGINT;
+
+-- Judge mode: an admin recorded this match directly for two other players (confirmed without approval).
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS judged_by INTEGER REFERENCES users(id);

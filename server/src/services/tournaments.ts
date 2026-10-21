@@ -5,6 +5,7 @@ import { query, Queryable, withTransaction } from '../db/database';
 const pool = { query } as Queryable;
 import { bestOfForRound, drawBracket, roundName, totalRounds } from '../lib/bracket';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
+import { parseGamePairs } from '../lib/scores';
 import {
   assertInProgress,
   bestOfFor,
@@ -19,6 +20,7 @@ import {
 import {
   applyConfirmation,
   displayName,
+  voidConfirmed,
   getMatch,
   hydrate,
   insertMatch,
@@ -463,7 +465,7 @@ export async function adminSetResult(adminId: number, tournamentId: number, tmId
     if (tm.status === 'completed' || tm.status === 'walkover') {
       if (tm.match_id) {
         const old = await getMatch(c, tm.match_id, true);
-        if (old.status === 'confirmed') await voidConfirmed(c, old);
+        if (old.status === 'confirmed') await voidConfirmed(c, old, 'Tournament result overridden');
       }
       await reopenBracketMatch(c, tm);
       tm = await getTournamentMatch(c, tm.id, true);
@@ -484,7 +486,7 @@ export async function adminSetResult(adminId: number, tournamentId: number, tmId
 
     // Games are given from player 1's perspective: [{ p1, p2 }, ...]
     if (!Array.isArray(body.games)) throw badRequest('Provide games or walkover');
-    const games = (body.games as { p1?: unknown; p2?: unknown }[]).map((g) => ({ a: Number(g?.p1), b: Number(g?.p2) }));
+    const games = parseGamePairs(body.games, 'p1', 'p2').map((g) => ({ a: g.s1, b: g.s2 }));
     const m = await insertMatch(c, {
       playerA: tm.player1_id!,
       playerB: tm.player2_id!,
@@ -498,31 +500,4 @@ export async function adminSetResult(adminId: number, tournamentId: number, tmId
     await applyConfirmation(c, m);
   });
   return getTournamentDetail(tournamentId, adminId);
-}
-
-/** Marks a confirmed match void and reverses its rating change for both players. */
-async function voidConfirmed(c: PoolClient, m: MatchRow): Promise<void> {
-  const dA = (m.rating_a_after ?? 0) - (m.rating_a_before ?? 0);
-  const dB = (m.rating_b_after ?? 0) - (m.rating_b_before ?? 0);
-  // Lock players in ascending id order, matching applyConfirmation, to avoid deadlocks.
-  // FOR NO KEY UPDATE (not FOR UPDATE): rating-only changes don't conflict with the KEY SHARE locks
-  // that foreign keys take when matches referencing these users are inserted.
-  const changes: [number, number][] = [
-    [m.player_a_id, dA],
-    [m.player_b_id, dB],
-  ];
-  changes.sort((x, y) => x[0] - y[0]);
-  for (const [uid, delta] of changes) {
-    const { rows } = await c.query<{ rating: number }>(`SELECT rating FROM users WHERE id = $1 FOR NO KEY UPDATE`, [uid]);
-    const before = rows[0].rating;
-    const after = before - delta;
-    await c.query(`UPDATE users SET rating = $2 WHERE id = $1`, [uid, after]);
-    // Record the reversal so rating history (and the profile chart) stays consistent with the current rating.
-    await c.query(
-      `INSERT INTO rating_adjustments (user_id, rating_before, rating_after, reason, match_id, rating_seq)
-       VALUES ($1, $2, $3, $4, $5, nextval('rating_event_seq'))`,
-      [uid, before, after, 'Tournament result overridden', m.id]
-    );
-  }
-  await c.query(`UPDATE matches SET status = 'voided' WHERE id = $1`, [m.id]);
 }
