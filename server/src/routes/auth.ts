@@ -53,8 +53,14 @@ function checkPassword(pw: unknown): string {
 }
 
 function checkDisplayName(raw: unknown): string {
-  const name = String(raw ?? '').trim();
+  // Must be an actual string: String() would accept arrays/objects (["ab"] -> "ab").
+  if (typeof raw !== 'string') throw badRequest('Display name must be text');
+  // Collapse runs of whitespace so names can't be padded or spread over several lines.
+  const name = raw.trim().replace(/\s+/g, ' ');
   if (name.length < 2 || name.length > 40) throw badRequest('Display name must be 2-40 characters');
+  if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/.test(name)) {
+    throw badRequest('Display name contains characters that are not allowed');
+  }
   return name;
 }
 
