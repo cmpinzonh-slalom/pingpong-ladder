@@ -5,7 +5,9 @@ import { api, type Me } from '../api/client';
 import LoginPage from '../pages/LoginPage';
 
 const setUser = vi.fn();
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ setUser }) }));
+// Signed-in user for pages that read it (e.g. the name setup screen); LoginPage doesn't use it.
+const auth: { user: Me | null } = { user: null };
+vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ setUser, user: auth.user }) }));
 
 const me: Me = {
   id: 1,
@@ -20,6 +22,7 @@ const me: Me = {
 afterEach(() => {
   vi.restoreAllMocks();
   setUser.mockReset();
+  auth.user = null;
 });
 
 describe('LoginPage', () => {
@@ -90,6 +93,8 @@ describe('LoginPage', () => {
 describe('SetupNamePage', () => {
   it('starts with an empty name instead of one derived from the email', async () => {
     const { default: SetupNamePage } = await import('../pages/SetupNamePage');
+    // An account with no name yet but an email that would have produced "Jane Doe" under the old pre-fill
+    auth.user = { ...me, display_name: null };
     render(<SetupNamePage />);
     expect(screen.getByLabelText('Display name')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
