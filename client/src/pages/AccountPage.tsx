@@ -24,6 +24,7 @@ function DisplayNameForm() {
     try {
       const me = await api.updateMe(trimmed);
       setUser(me);
+      // The field is disabled while saving, so nothing typed during the request can be lost here.
       setName(me.display_name ?? trimmed);
       setSaved(true);
     } catch (err) {
@@ -48,6 +49,7 @@ function DisplayNameForm() {
           setName(e.target.value);
           setSaved(false);
         }}
+        disabled={busy}
         error={name.length > 0 && !valid}
         helperText={name.length > 0 && !valid ? 'Use 2-40 characters' : undefined}
         slotProps={{ htmlInput: { maxLength: 60 } }}

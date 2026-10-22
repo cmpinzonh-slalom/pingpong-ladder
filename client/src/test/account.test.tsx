@@ -54,6 +54,26 @@ describe('AccountPage display name', () => {
     expect(await screen.findByText('Display name updated.')).toBeInTheDocument();
   });
 
+  it('locks the field while saving so edits are not overwritten by the response', async () => {
+    let resolve!: (m: Me) => void;
+    vi.spyOn(api, 'updateMe').mockReturnValue(new Promise<Me>((r) => (resolve = r)));
+    const user = userEvent.setup();
+    render(<AccountPage />);
+    const field = screen.getByLabelText('Display name');
+    await user.clear(field);
+    await user.type(field, 'Janie');
+    await user.click(screen.getByRole('button', { name: 'Save name' }));
+
+    // While the request is in flight the field can't be edited
+    expect(field).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+
+    resolve({ ...me, display_name: 'Janie' });
+    expect(await screen.findByText('Display name updated.')).toBeInTheDocument();
+    expect(field).toBeEnabled();
+    expect(field).toHaveValue('Janie');
+  });
+
   it('shows the server error and does not update the user', async () => {
     vi.spyOn(api, 'updateMe').mockRejectedValue(new ApiError(400, 'Display name contains characters that are not allowed'));
     const user = userEvent.setup();
