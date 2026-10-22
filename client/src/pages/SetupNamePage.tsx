@@ -4,14 +4,9 @@ import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function SetupNamePage() {
-  const { user, setUser } = useAuth();
-  const [name, setName] = useState(() => {
-    const local = user?.email.split('@')[0] ?? '';
-    return local
-      .split('.')
-      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-      .join(' ');
-  });
+  const { setUser } = useAuth();
+  // Deliberately empty: the display name is the user's choice, not derived from their email.
+  const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: FormEvent) => {

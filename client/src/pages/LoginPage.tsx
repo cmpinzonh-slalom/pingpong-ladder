@@ -7,16 +7,6 @@ import { useAuth } from '../contexts/AuthContext';
 
 const MIN_PASSWORD = 8;
 
-/** Suggest "First Last" from first.last@slalom.com. */
-function nameFromEmail(email: string): string {
-  return email
-    .split('@')[0]
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-    .join(' ');
-}
-
 export default function LoginPage() {
   const { setUser } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -24,7 +14,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [name, setName] = useState('');
-  const [nameTouched, setNameTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -81,10 +70,7 @@ export default function LoginPage() {
               slotProps={{ htmlInput: { autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false } }}
               margin="dense"
               value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                if (!nameTouched) setName(nameFromEmail(e.target.value));
-              }}
+              onChange={(e) => setEmail(e.target.value)}
             />
             {mode === 'register' && (
               <TextField
@@ -93,10 +79,7 @@ export default function LoginPage() {
                 fullWidth
                 margin="dense"
                 value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  setNameTouched(true);
-                }}
+                onChange={(e) => setName(e.target.value)}
               />
             )}
             <PasswordField
