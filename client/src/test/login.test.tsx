@@ -34,14 +34,21 @@ describe('LoginPage', () => {
     expect(setUser).toHaveBeenCalledWith(me);
   });
 
-  it('registers with a suggested display name and validates passwords', async () => {
+  it('registers with a name the user types (never pre-filled from the email) and validates passwords', async () => {
     const register = vi.spyOn(api, 'register').mockResolvedValue(me);
     const user = userEvent.setup();
     render(<LoginPage />);
     await user.click(screen.getByRole('tab', { name: 'Create account' }));
     await user.type(screen.getByLabelText(/Slalom email/), 'jane.doe@slalom.com');
-    expect(screen.getByLabelText(/Display name/)).toHaveValue('Jane Doe');
+    // Not derived from the email, and sign-up can't proceed without a name
+    expect(screen.getByLabelText(/Display name/)).toHaveValue('');
+    await user.type(screen.getByLabelText(/^Password/), 'secret123');
+    await user.type(screen.getByLabelText(/Confirm password/), 'secret123');
+    expect(screen.getByRole('button', { name: 'Create account' })).toBeDisabled();
+    await user.clear(screen.getByLabelText(/Confirm password/));
 
+    await user.type(screen.getByLabelText(/Display name/), 'Jane D');
+    await user.clear(screen.getByLabelText(/^Password/));
     await user.type(screen.getByLabelText(/^Password/), 'secret123');
     await user.type(screen.getByLabelText(/Confirm password/), 'different1');
     await user.click(screen.getByRole('button', { name: 'Create account' }));
@@ -51,7 +58,7 @@ describe('LoginPage', () => {
     await user.clear(screen.getByLabelText(/Confirm password/));
     await user.type(screen.getByLabelText(/Confirm password/), 'secret123');
     await user.click(screen.getByRole('button', { name: 'Create account' }));
-    expect(register).toHaveBeenCalledWith('jane.doe@slalom.com', 'secret123', 'Jane Doe');
+    expect(register).toHaveBeenCalledWith('jane.doe@slalom.com', 'secret123', 'Jane D');
   });
 
   it('toggles password visibility', async () => {
@@ -71,10 +78,20 @@ describe('LoginPage', () => {
     render(<LoginPage />);
     await user.click(screen.getByRole('tab', { name: 'Create account' }));
     await user.type(screen.getByLabelText(/Slalom email/), 'jane@gmail.com');
+    await user.type(screen.getByLabelText(/Display name/), 'Jane');
     await user.type(screen.getByLabelText(/^Password/), 'secret123');
     await user.type(screen.getByLabelText(/Confirm password/), 'secret123');
     await user.click(screen.getByRole('button', { name: 'Create account' }));
     expect(screen.getByText('Use your @slalom.com email address')).toBeInTheDocument();
     expect(register).not.toHaveBeenCalled();
+  });
+});
+
+describe('SetupNamePage', () => {
+  it('starts with an empty name instead of one derived from the email', async () => {
+    const { default: SetupNamePage } = await import('../pages/SetupNamePage');
+    render(<SetupNamePage />);
+    expect(screen.getByLabelText('Display name')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
   });
 });
