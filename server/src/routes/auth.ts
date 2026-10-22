@@ -52,9 +52,25 @@ function checkPassword(pw: unknown): string {
   return p;
 }
 
-function checkDisplayName(raw: unknown): string {
-  const name = String(raw ?? '').trim();
+/**
+ * Characters that render as nothing (or reorder text) and could make a name look blank or like someone else's:
+ * control (Cc), format (Cf: zero-width, bidi marks/isolates/overrides, soft hyphen...), private-use (Co),
+ * surrogate (Cs) and unassigned (Cn) code points, plus blank-looking fillers that Unicode classes as
+ * letters, symbols or marks (Hangul fillers, blank Braille cell, combining grapheme joiner, Khmer inherent vowels).
+ */
+const INVISIBLE_CHARS = /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Cn}\u034f\u115f\u1160\u17b4\u17b5\u2800\u3164\uffa0]/u;
+/** A name must contain at least one character that actually displays: a letter, number, punctuation or symbol. */
+const VISIBLE_CHAR = /[\p{L}\p{N}\p{P}\p{S}]/u;
+
+export function checkDisplayName(raw: unknown): string {
+  // Must be an actual string: String() would accept arrays/objects (["ab"] -> "ab").
+  if (typeof raw !== 'string') throw badRequest('Display name must be text');
+  // Collapse runs of whitespace (incl. newlines and non-breaking spaces) so names can't be padded or multi-line.
+  const name = raw.trim().replace(/\s+/g, ' ');
   if (name.length < 2 || name.length > 40) throw badRequest('Display name must be 2-40 characters');
+  if (INVISIBLE_CHARS.test(name) || !VISIBLE_CHAR.test(name)) {
+    throw badRequest('Display name contains characters that are not allowed');
+  }
   return name;
 }
 

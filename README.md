@@ -3,6 +3,7 @@
 Track ping pong matches between Slalom colleagues with Elo ratings. Results only count once **both players confirm**.
 
 - Create an account with your `@slalom.com` email and a password. Forgotten passwords are reset by an admin.
+- Players choose their own display name when signing up (it's not derived from the email) and can change it later on the Account page; the new name shows everywhere, including past results.
 - Record a match with game-by-game scores (single game, best of 3 or 5; games to 11, win by 2).
 - Your opponent confirms, or proposes a correction (which you then confirm or correct, and so on). Either player can withdraw a pending match.
 - On confirmation, ratings update with Elo (start 1200, K = 32).
